@@ -5,8 +5,8 @@ import random
 import tensorflow as tf
 import time
 import json
-
 from argparse import ArgumentParser
+
 from lib.dqn_utils_m import *
 
 def linearly_decaying_epsilon(decay_period, step, warmup_steps, epsilon):
@@ -83,52 +83,43 @@ class Agent():
 	def __init__(self,
 				 sess,
 				 num_actions,
-				 exp_dir=None,
 				 replay_capacity=1000000,
 				 replay_min_size=50000,
 				 update_period=4,
 				 target_update_period=10000,
-				 epsilon_end=0.01,
+				 epsilon_train=0.01,
+				 epsilon_eval=0.001,
 				 epsilon_decay_period=1000000,
 				 gamma=0.99,
 				 batch_size=32,
+				 eval_mode=False,
 				 max_tf_checkpoints_to_keep=4,
-				 # https://www.tensorflow.org/api_docs/python/tf/compat/v1/train/RMSPropOptimizer
-				 # #migrate-to-tf2_2
+				 # https://www.tensorflow.org/api_docs/python/tf/compat\
+				 # /v1/train/RMSPropOptimizer#migrate-to-tf2_2
 				 optimizer=tf.train.RMSPropOptimizer(learning_rate=0.00025, \
 													 decay=0.95, \
 													 epsilon=1e-6, \
 													 centered=False),
                  summary_writer=None,
                  summary_writing_frequency=500):
-		self.config = {}
-		self.config['num_actions'] = num_actions
-		self.config['replay_capacity'] = replay_capacity
-		self.config['replay_min_size'] = replay_min_size
-		self.config['update_period'] = update_period
-		self.config['target_update_period'] = target_update_period
-		self.config['epsilon_end'] = epsilon_end
-		self.config['gamma'] = gamma
-		self.config['batch_size'] = batch_size
-		self.config['max_tf_checkpoints_to_keep'] = max_tf_checkpoints_to_keep
+		self.config = json_serializable(locals())
 		self.config['optimizer'] = optimizer.get_name()
-		self.config['summary_writing_frequency'] = summary_writing_frequency
-		self.sess = sess
+		self._sess = sess
 		self.num_actions = num_actions
-		self.exp_dir = exp_dir
 		self.replay_min_size = replay_min_size
 		self.update_period = update_period
 		self.target_update_period = target_update_period
-		self.epsilon_end = epsilon_end
+		self.epsilon_train = epsilon_train
+		self.epsilon_eval = epsilon_eval
 		self.epsilon_decay_period = epsilon_decay_period
 		self.gamma = gamma
+		self.eval_mode = eval_mode
 		self.max_tf_checkpoints_to_keep = max_tf_checkpoints_to_keep
 		self.optimizer = optimizer
 		self.summary_writer = summary_writer
 		self.summary_writing_frequency = summary_writing_frequency
-		self.training_steps = 0
-		self.replay_memory = ReplayMemory(memory_size=replay_capacity, batch_size=batch_size)
-		self.history = History()
+		self._replay = ReplayMemory(memory_size=replay_capacity, batch_size=batch_size)
+		self._history = History()
 		self._build_networks()
 		self._train_op = self._build_train_op()
 		self._sync_qt_ops = self._build_sync_op()
@@ -139,10 +130,12 @@ class Agent():
 			# All tf.summaries should have been defined prior to running this.
 			self._merged_summaries = tf.summary.merge_all()
 
+		self.training_steps = 0
+
 	def _build_networks(self):
 		self.online_network = NatureDQNNetwork(num_actions=self.num_actions, name="online")
 		self.target_network = NatureDQNNetwork(num_actions=self.num_actions, name="target")
-	
+
 	# Note: Required to be called after _build_train_op(), otherwise return []
 	def _get_var_list(self, name='online'):
 		scope = tf.get_default_graph().get_name_scope()
@@ -184,7 +177,7 @@ class Agent():
 	def _build_state_processer(self):
 		self.raw_state = tf.placeholder(shape=[210, 160, 3], dtype=tf.uint8)
 		self.output = tf.image.rgb_to_grayscale(self.raw_state)
-		self.output = tf.image.crop_to_bounding_box(self.output, 34, 0, 160, 160)
+		# self.output = tf.image.crop_to_bounding_box(self.output, 34, 0, 160, 160)
 		self.output = tf.image.resize(
 				self.output, [84, 84], method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
 		return tf.squeeze(self.output)
@@ -204,142 +197,240 @@ class Agent():
 		return sync_qt_ops
 	
 	def _build_saver(self):
-		self.checkpoint_dir = os.path.join(self.exp_dir, 'checkpoints')
-		if not os.path.exists(self.checkpoint_dir):
-			os.makedirs(self.checkpoint_dir)
 		return tf.train.Saver(var_list=self._get_var_list(), \
 				max_to_keep=self.max_tf_checkpoints_to_keep)
 
+	def bundle(self):
+		self._saver.save(
+			self._sess,
+			os.path.join(self.checkpoint_dir, 'tf_ckpt'),
+			global_step=self.training_steps)
+
 	def select_action(self):
-		epsilon = linearly_decaying_epsilon(
-			decay_period=self.epsilon_decay_period,
-			step=self.training_steps,
-			warmup_steps=self.replay_min_size,
-			epsilon=self.epsilon_end
-		)
+		if self.eval_mode:
+			epsilon = self.epsilon_eval
+		else:
+			epsilon = linearly_decaying_epsilon(
+				decay_period=self.epsilon_decay_period,
+				step=self.training_steps,
+				warmup_steps=self.replay_min_size,
+				epsilon=self.epsilon_train)
 		if random.random() <= epsilon:
 			return random.randint(0, self.num_actions - 1)
 		else:
-			return self.sess.run(self.q_argmax, {self.state_ph: self.history.get()})
+			return self._sess.run(self.q_argmax, {self.state_ph: self._history.get()})
 
 	def step(self, action, observation, reward, terminal):
-		state = self.sess.run(self._state_processer, {self.raw_state: observation})
-		self.history.add(state)
-		self.replay_memory.add(action, state, reward, terminal)
-
-		if self.replay_memory.count > self.replay_min_size:
+		self._history.add(observation)
+		# If eval, store and train are no longer needed.
+		if self.eval_mode:
+			return
+		# Store transition
+		self._replay.add(action, observation, reward, terminal)
+		# Train
+		if self._replay.count > self.replay_min_size:
 			if self.training_steps % self.update_period == 0:
 				states, actions, rewards, next_states, terminals = \
-					self.replay_memory.sample()
+					self._replay.sample()
 				feed_fict = {self.state_ph: states, \
 							 self.next_state_ph: next_states, \
 							 self.actions_ph: actions, \
 							 self.rewards_ph: rewards, \
 							 self.terminals_ph: terminals}
-				self.sess.run(self._train_op, feed_fict)
+				self._sess.run(self._train_op, feed_fict)
 
 				if self.summary_writer is not None and \
 					self.training_steps % self.summary_writing_frequency == 0:
-					summary = self.sess.run(self._merged_summaries, feed_fict)
+					summary = self._sess.run(self._merged_summaries, feed_fict)
 					self.summary_writer.add_summary(summary, self.training_steps)
 
 			if self.training_steps % self.target_update_period == 0:
-				self.sess.run(self._sync_qt_ops)
-
-			if (self.training_steps % 1000000 == 999999):
-				self._saver.save(
-					self.sess,
-					os.path.join(self.checkpoint_dir, 'tf_ckpt'),
-					global_step=self.training_steps)
+				self._sess.run(self._sync_qt_ops)
 
 		self.training_steps += 1
 
-	def reset_history(self, observation):
-		state = self.sess.run(self._state_processer, feed_dict={self.raw_state: observation})
+	def begin_episode(self, observation):
 		for _ in range(4):
-			self.history.add(state)
+			self._history.add(observation)
 
+class Runner():
+	def __init__(self,
+				 base_dir,
+				 env_name,
+				 num_iterations=200,
+				 min_train_steps=60000,
+				 evaluation_steps=20000,
+				 max_steps_per_episode=27000,
+				 clip_rewards=True):
+		if not os.path.join(base_dir):
+			raise
+		self.config = json_serializable(locals())
+		self._base_dir = base_dir
+		self._num_iterations = num_iterations
+		self._min_train_steps = min_train_steps
+		self._evaluation_steps = evaluation_steps
+		self._max_steps_per_episode = max_steps_per_episode
+		self._clip_rewards = clip_rewards
+		# env
+		self._env = create_atari_environment(env_name)
+		num_actions = self._env.action_space.n
+		# summary_writer
+		summary_dir = os.path.join(self._base_dir, "tf1_summary")
+		if not os.path.exists(summary_dir):
+			os.makedirs(summary_dir)
+		self._summary_writer = tf.summary.FileWriter(summary_dir)
+		# sess
+		gpu_options = tf.GPUOptions(allow_growth=True)
+		self._sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
+		# agent
+		self._agent = Agent(sess=self._sess, num_actions=num_actions, \
+			 				summary_writer=self._summary_writer)
+		self._summary_writer.add_graph(graph=tf.get_default_graph())
+		self._sess.run(tf.global_variables_initializer())
+
+		self.config['env_config'] = self._env.config
+		self.config['agent_config'] = self._agent.config
+
+		self.iteration = 0
+		self.total_episode = 0
+
+	def _run_one_episode(self):
+		episode_length = 0
+		episode_reward = 0.
+
+		observation = self._env.reset()
+		self._agent.begin_episode(observation)
+		while True:
+			print(f"\rlength: {episode_length}, reward: {episode_reward}", end='')
+
+			action = self._agent.select_action()
+			observation, reward, terminal, _ = self._env.step(action)
+
+			episode_reward += reward
+			episode_length += 1
+
+			reward_clip = np.clip(reward, -1, 1)
+
+			if self._env.game_over or (episode_length >= self._max_steps_per_episode):
+				# we lose all lifes
+				self._agent.step(action, observation, reward_clip, True)
+				break
+			elif terminal:
+				# If we lose a life but the episode is not over
+				# Terminal on life loss = True
+				self._agent.step(action, observation, reward_clip, True)
+				self._agent.begin_episode(observation)
+			else:
+				self._agent.step(action, observation, reward_clip, False)
+		return episode_length, episode_reward
+
+	def _run_one_phase(self, min_steps, eval_mode=False):
+		step_count = 0
+		num_episodes = 0
+		sum_rewards = 0.
+
+		self._agent.eval_mode = eval_mode
+		start_time = time.time()
+
+		while step_count < min_steps:
+			print(f"\n@iter: {self.iteration}/{self._num_iterations}, train: {not eval_mode}, " \
+				  f"step: {step_count}/{min_steps}, total_ep: {self.total_episode}")
+			episode_length, episode_reward = self._run_one_episode()
+			step_count += episode_length
+			sum_rewards += episode_reward
+			num_episodes += 1
+			# episode_info
+			if not eval_mode:
+				episode_summary = tf.Summary(value=[
+					tf.Summary.Value(simple_value=episode_reward, tag="episode_info/reward"),
+					tf.Summary.Value(simple_value=episode_length, tag="episode_info/length")
+				])
+				self._summary_writer.add_summary(episode_summary, self.total_episode)
+				self.total_episode += 1
+		time_delta = time.time() - start_time
+		average_steps_per_second = step_count / time_delta
+		average_rewrd = sum_rewards / num_episodes
+		return num_episodes, average_rewrd, average_steps_per_second
+
+	def _save_tensorboard_summaries(self,
+									num_episodes_train,
+									average_reward_train,
+									average_steps_per_second,
+									num_episodes_eval,
+									average_reward_eval):
+		summary = tf.Summary(value=[
+			tf.Summary.Value(
+				tag='train/num_episodes', simple_value=num_episodes_train),
+			tf.Summary.Value(
+				tag='train/average_reward', simple_value=average_reward_train),
+			tf.Summary.Value(
+				tag='train/average_steps_per_second',
+				simple_value=average_steps_per_second),
+			tf.Summary.Value(
+				tag='eval/num_episodes', simple_value=num_episodes_eval),
+			tf.Summary.Value(
+				tag='eval/average_reward', simple_value=average_reward_eval)
+		])
+		self._summary_writer.add_summary(summary, self.iteration)
+
+	def _checkpoint_experiment(self):
+		checkpoint_dir = os.path.join(self._base_dir, 'checkpoints')
+		if not os.path.exists(checkpoint_dir):
+			os.makedirs(checkpoint_dir)
+		self._agent._saver.save(
+			self._sess,
+			os.path.join(checkpoint_dir, 'tf_ckpt'),
+			global_step=self.iteration)
+
+	def _log_experiment(self):
+		pass
+
+	def run_experiment(self):
+		for self.iteration in range(self._num_iterations):
+			num_episodes_train, average_reward_train, average_steps_per_second = \
+				self._run_one_phase(min_steps=self._min_train_steps)
+			num_episodes_eval, average_reward_eval, _ = \
+				self._run_one_phase(min_steps=self._evaluation_steps, eval_mode=True)
+			self._save_tensorboard_summaries(num_episodes_train, \
+											 average_reward_train, \
+											 average_steps_per_second, \
+											 num_episodes_eval, \
+											 average_reward_eval)
+			self._checkpoint_experiment()
+			self._log_experiment()
+		print(f"\nResults have been saved into {self._base_dir}")
+		self._summary_writer.flush()
+		self._env.close()
 
 def main(args):
-	name = args.name
-	tag = args.tag
-	num_episodes = args.num_ep
-	# Create environment
-	env = gym.make('Breakout-v0')
-	num_actions = env.action_space.n
-	# results dir setting
+	if not os.path.exists(args.disk_dir):
+		raise
 	timestamp = time.strftime("%Y-%m-%d-%H_%M_%S", time.localtime(time.time()))
-	exp_name = name or (tag + '-' + timestamp)
-	results_dir = os.path.join(f"/data/hanjl/my_results/{env.spec.id}", exp_name)
-	summary_dir = os.path.join(results_dir, "tf1_summary")
-	if not os.path.exists(summary_dir):
-		os.makedirs(summary_dir)
-	summary_writer = tf.summary.FileWriter(summary_dir)
-	# For episode information
-	episode_lengths=np.zeros(num_episodes)
-	episode_rewards=np.zeros(num_episodes)
-	# Config used for recording all parameters
+	env_name = '{}NoFrameskip-v0'.format(args.env_name)
+	exp_name = args.exp_name or (args.tag + '-' + timestamp)
+	base_dir = os.path.join(args.disk_dir, f"my_results/{env_name}/{exp_name}")
+	if not os.path.exists(base_dir):
+		os.makedirs(base_dir)
 	config = {}
 	config['exp_name'] = exp_name
 	config['time'] = timestamp
-	config['env'] = env.spec.id
-	config['results_dir'] = results_dir
-	# Tf.Session()
-	gpu_options = tf.GPUOptions(allow_growth=True)	
-	with tf.Session(config=tf.ConfigProto(gpu_options=gpu_options)) as sess:
-		# Instantiate Agent and initialize all variables
-		agent = Agent(sess,
-					  exp_dir=results_dir,
-					  num_actions=num_actions,
-					  replay_capacity=1000000,
-					  replay_min_size=50000,
-					  update_period=4,
-					  target_update_period=10000,
-					  epsilon_end=0.01,
-					  epsilon_decay_period=1000000,
-					  gamma=0.99,
-					  batch_size=32,
-					  # https://www.tensorflow.org/api_docs/python/tf/compat/v1/train/RMSPropOptimizer
-					  # #migrate-to-tf2_2
-					  optimizer=tf.train.RMSPropOptimizer(learning_rate=0.00025, \
-						  								  decay=0.95, \
-														  epsilon=1e-6, \
-														  centered=False),
-					  summary_writer=summary_writer,
-                      summary_writing_frequency=500)
-		sess.run(tf.global_variables_initializer())
-		# Save config.json
-		config['agent_config'] = agent.config
-		config_json = json.dumps(config, sort_keys=False, indent=4, separators=(',', ': '))
-		with open(os.path.join(results_dir, "config.json"), 'w') as out:
-			out.write(config_json)
-		# Start iteration of episodes
-		for i in range(num_episodes):
-			observation = env.reset()
-			agent.reset_history(observation)
-			# One episode
-			while True:
-				print(f"\r@episode: {i}/{num_episodes}, length: {episode_lengths[i]}", end='')
-				action = agent.select_action()
-				observation, reward, done, _ = env.step(action)
-				agent.step(action, observation, reward, done)
-				episode_rewards[i] += reward
-				episode_lengths[i] += 1
-				if done:
-					break
-			# Summary episode infomation
-			episode_summary = tf.Summary(value=[
-				tf.Summary.Value(simple_value=episode_rewards[i], tag="episode_info/reward"),
-				tf.Summary.Value(simple_value=episode_lengths[i], tag="episode_info/length")
-			])
-			summary_writer.add_summary(episode_summary, i)
-			# summary_writer.flush()
-			print(f"\nreward: {episode_rewards[i]}")
+	config['base_dir'] = base_dir
+	config['env_name'] = env_name
+	# Runner
+	runner = Runner(base_dir=base_dir, env_name=env_name)
+	config['runner_config'] = runner.config
+	# Save config_json
+	config_json = json.dumps(config, sort_keys=False, indent=4, separators=(',', ': '))
+	with open(os.path.join(base_dir, "config.json"), 'w') as out:
+		out.write(config_json)
+	# Run
+	runner.run_experiment()
 
 if __name__ == '__main__':
 	parser = ArgumentParser()
-	parser.add_argument('--tag', type=str, default='test', help='Used as exp_name')
-	parser.add_argument('--name', type=str, default=None, help='Used as exp_name')
-	parser.add_argument('--num_ep', type=int, default=10000, help='Number of episodes')
+	parser.add_argument('--tag', type=str, default='.debug', help='Used as part exp_name')
+	parser.add_argument('--exp_name', type=str, default=None, help='Used as full exp_name')
+	parser.add_argument('--env_name', type=str, default='Breakout', help='Env name')
+	parser.add_argument('--disk_dir', type=str, default='/data/hanjl', help='Data disk dir')
 	args, unknown_args = parser.parse_known_args()
 	main(args)
