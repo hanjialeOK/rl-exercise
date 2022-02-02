@@ -1,3 +1,4 @@
+from tkinter.messagebox import NO
 import numpy as np
 import os
 import tensorflow as tf
@@ -7,13 +8,27 @@ from argparse import ArgumentParser
 from collections import namedtuple
 
 from lib.utils import *
-from lib.agent import Agent
+from lib.dueling_agent import Agent as dueling_agent
+from lib.dqn_agent import Agent as dqn_agent
 from lib.atari import create_atari_environment
+
+def create_agent(sess, num_actions, agent_name=None, summary_writer=None):
+	assert agent_name is not None
+	if agent_name == 'dqn':
+		return dqn_agent(sess=sess, num_actions=num_actions, summary_writer=summary_writer)
+	elif agent_name == 'dueling':
+		return dueling_agent(
+			sess=sess, num_actions=num_actions, summary_writer=summary_writer)
+	else:
+		raise ValueError('Unknown agent: {}'.format(agent_name))
 
 class Runner():
 	def __init__(self,
 				 base_dir,
+				 agent_name,
 				 env_name,
+				 create_agent_fn=create_agent,
+				 create_env_fn=create_atari_environment,
 				 num_iterations=200,
 				 min_train_steps=60000,
 				 evaluation_steps=20000,
@@ -36,11 +51,11 @@ class Runner():
 		gpu_options = tf.GPUOptions(allow_growth=True)
 		self._sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
 		# env
-		self._env = create_atari_environment(env_name)
+		self._env = create_env_fn(env_name)
 		num_actions = self._env.action_space.n
 		# agent
-		self._agent = Agent(sess=self._sess, num_actions=num_actions, \
-			 				summary_writer=self._summary_writer)
+		self._agent = create_agent_fn(sess=self._sess, num_actions=num_actions, \
+			 						  agent_name=agent_name, summary_writer=self._summary_writer)
 		self._summary_writer.add_graph(graph=tf.get_default_graph())
 		self._sess.run(tf.global_variables_initializer())
 
@@ -159,14 +174,15 @@ def main(args):
 	if not os.path.exists(args.disk_dir):
 		raise
 	timestamp = time.strftime("%Y-%m-%d-%H_%M_%S", time.localtime(time.time()))
-	exp_name = args.exp_name or (args.tag + '-' + timestamp)
+	exp_name = args.exp_name or (args.agent_name + '-' + timestamp)
+	agent_name = args.agent_name
 	env_name = '{}NoFrameskip-v0'.format(args.env_name)
 	base_dir = os.path.join(args.disk_dir, f"my_results/{env_name}/{exp_name}")
 	if not os.path.exists(base_dir):
 		os.makedirs(base_dir)
 	config = json_serializable(locals())
 	# Runner
-	runner = Runner(base_dir=base_dir, env_name=env_name)
+	runner = Runner(base_dir=base_dir, agent_name=agent_name, env_name=env_name)
 	config['runner_config'] = runner.config
 	# Save config_json
 	config_json = json.dumps(config, sort_keys=False, indent=4, separators=(',', ': '))
@@ -177,8 +193,8 @@ def main(args):
 
 if __name__ == '__main__':
 	parser = ArgumentParser()
-	parser.add_argument('--tag', type=str, default='.test', help='Used as part exp_name')
 	parser.add_argument('--exp_name', type=str, default=None, help='Used as full exp_name')
+	parser.add_argument('--agent_name', type=str, default='dqn', help='Agent name', choices=['dqn', 'dueling'])
 	parser.add_argument('--env_name', type=str, default='Breakout', help='Env name')
 	parser.add_argument('--disk_dir', type=str, default='/data/hanjl', help='Data disk dir')
 	args, unknown_args = parser.parse_known_args()
