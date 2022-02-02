@@ -406,16 +406,12 @@ def main(args):
 	if not os.path.exists(args.disk_dir):
 		raise
 	timestamp = time.strftime("%Y-%m-%d-%H_%M_%S", time.localtime(time.time()))
-	env_name = '{}NoFrameskip-v0'.format(args.env_name)
 	exp_name = args.exp_name or (args.tag + '-' + timestamp)
+	env_name = '{}NoFrameskip-v0'.format(args.env_name)
 	base_dir = os.path.join(args.disk_dir, f"my_results/{env_name}/{exp_name}")
 	if not os.path.exists(base_dir):
 		os.makedirs(base_dir)
-	config = {}
-	config['exp_name'] = exp_name
-	config['time'] = timestamp
-	config['base_dir'] = base_dir
-	config['env_name'] = env_name
+	config = json_serializable(locals())
 	# Runner
 	runner = Runner(base_dir=base_dir, env_name=env_name)
 	config['runner_config'] = runner.config
