@@ -6,17 +6,23 @@ import json
 from argparse import ArgumentParser
 from collections import namedtuple
 
-from lib.utils import *
-from lib.dueling_agent import Agent as dueling_agent
-from lib.dqn_agent import Agent as dqn_agent
-from lib.atari import create_atari_environment
+from lib.utils import json_serializable
+from lib.agents.dqn_agent import *
+from lib.env.atari import create_atari_environment
 
 def create_agent(sess, num_actions, agent_name=None, summary_writer=None):
 	assert agent_name is not None
 	if agent_name == 'dqn':
-		return dqn_agent(sess=sess, num_actions=num_actions, summary_writer=summary_writer)
+		return DQNAgent(
+			sess=sess, num_actions=num_actions, summary_writer=summary_writer)
+	elif agent_name == 'ddqn':
+		return DDQNAgent(
+			sess=sess, num_actions=num_actions, summary_writer=summary_writer)
+	elif agent_name == 'per':
+		return PERAgent(
+			sess=sess, num_actions=num_actions, summary_writer=summary_writer)
 	elif agent_name == 'dueling':
-		return dueling_agent(
+		return DuelingAgent(
 			sess=sess, num_actions=num_actions, summary_writer=summary_writer)
 	else:
 		raise ValueError('Unknown agent: {}'.format(agent_name))
@@ -193,7 +199,8 @@ def main(args):
 if __name__ == '__main__':
 	parser = ArgumentParser()
 	parser.add_argument('--exp_name', type=str, default=None, help='Used as full exp_name')
-	parser.add_argument('--agent_name', type=str, default='dqn', help='Agent name', choices=['dqn', 'dueling'])
+	parser.add_argument('--agent_name', type=str, default='dqn', help='Agent name', \
+						choices=['dqn', 'ddqn', 'per', 'dueling'])
 	parser.add_argument('--env_name', type=str, default='Breakout', help='Env name')
 	parser.add_argument('--disk_dir', type=str, default='/data/hanjl', help='Data disk dir')
 	args, unknown_args = parser.parse_known_args()
