@@ -7,7 +7,7 @@ from lib.replay.sum_tree import SumTree
 SampleDataType = namedtuple('sample_data', \
 	['states', 'actions', 'rewards', 'next_states', 'terminals'])
 
-PERDataType = namedtuple('sample_data', \
+PERDataType = namedtuple('per_data', \
 	['states', 'actions', 'rewards', 'next_states', 'terminals', 'indexes', 'prioritizes'])
 
 class ReplayMemory:
@@ -37,11 +37,12 @@ class ReplayMemory:
 		self.count = max(self.count, self.current + 1)
 		self.current = (self.current + 1) % self.memory_size
 
-	def is_valid_index(self, index):
+	def _is_valid_index(self, index):
+		if index < self.history_length or index >= self.count:
+			return False
 		if index >= self.current and index - self.history_length < self.current:
 			return False
 		# if wraps over episode end, then get new one
-		# Note: t3 is allowed to be True.
 		if self.terminals[(index - self.history_length):index].any():
 			return False
 		return True
@@ -62,8 +63,9 @@ class ReplayMemory:
 			action = a4
 			reward = r5
 			terminal = t5
-		Note: if t5 is True, s5 will be a bad observation. However, 
-		      target = r5 + gamma * (1 - t5) * q_max(s5) = r5, which has no business with s5.
+		Note: 
+			if t5 is True, s5 will be a bad observation. However, 
+		    target = r5 + gamma * (1 - t5) * q_max(s5) = r5, which has no business with s5.
 		"""
 		assert self.count > self.history_length
 		indexes = []
@@ -71,7 +73,7 @@ class ReplayMemory:
 		while len(indexes) < self.batch_size:
 			while True:
 				index = random.randint(self.history_length, self.count - 1)
-				if self.is_valid_index(index):
+				if self._is_valid_index(index):
 					break
 				attempt_count += 1
 				if attempt_count >= max_sample_attempts:
@@ -91,56 +93,26 @@ class ReplayMemory:
 
 		return SampleDataType(self.states, actions, rewards, self.next_states, terminals)
 
-class PrioritizedReplay:
+class PrioritizedReplay(ReplayMemory):
 	def __init__(self, memory_size, batch_size):
-		self.memory_size = memory_size
-		self.actions = np.empty(self.memory_size, dtype = np.uint8)
-		self.screens = np.empty((self.memory_size, 84, 84), dtype = np.uint8)
-		self.rewards = np.empty(self.memory_size, dtype = np.int32)
-		self.terminals = np.empty(self.memory_size, dtype = np.bool)
-		self.history_length = 4
-		self.dims = (84, 84)
-		self.batch_size = batch_size
-		self.count = 0
-		self.current = 0
+		super(PrioritizedReplay, self).__init__(memory_size, batch_size)
 		self.sum_tree = SumTree(memory_size)
 
-		# pre-allocate states and next_states for minibatch
-		self.states = np.empty((self.batch_size, self.history_length) + self.dims, dtype = np.uint8)
-		self.next_states = np.empty((self.batch_size, self.history_length) + self.dims, dtype = np.uint8)
-
 	def add(self, action, screen, reward, terminal, priority):
-		assert screen.shape == self.dims
-		# NB! screen is next_state, after action and reward
-		self.actions[self.current] = action
-		self.screens[self.current, ...] = screen
-		self.rewards[self.current] = reward
-		self.terminals[self.current] = terminal
+		# Note: sum_tree.set should be executed before super()
+		# because self.current will +1 in super()
 		self.sum_tree.set(self.current, priority)
-		self.count = max(self.count, self.current + 1)
-		self.current = (self.current + 1) % self.memory_size
-
-	def is_valid_index(self, index):
-		assert index < self.count
-		if index < self.history_length:
-			return False
-		if index >= self.current and index - self.history_length < self.current:
-			return False
-		# if wraps over episode end, then get new one
-		# Note: t3 is allowed to be True.
-		if self.terminals[(index - self.history_length):index].any():
-			return False
-		return True
+		super(PrioritizedReplay, self).add(action, screen, reward, terminal)
 
 	def sample(self, max_sample_attempts=1000):
 		"""
 		This process looks like:
 			...
-			<a0, s1, r1, t1>
-			<a1, s2, r2, t2>
-			<a2, s3, r3, t3>
-			<a3, s4, r4, t4>
-			<a4, s5, r5, t5>  <=  index
+			<a0, s1, r1, t1, p1>
+			<a1, s2, r2, t2, p2>
+			<a2, s3, r3, t3, p3>
+			<a3, s4, r4, t4, p4>
+			<a4, s5, r5, t5, p5>  <=  index
 			...
 		Returns:
 			state = [s1, s2, s3, s4]
@@ -148,18 +120,20 @@ class PrioritizedReplay:
 			action = a4
 			reward = r5
 			terminal = t5
-		Note: if t5 is True, s5 will be a bad observation. However, 
-		      target = r5 + gamma * (1 - t5) * q_max(s5) = r5, which has no business with s5.
+			priority = p5
+		Note: 
+			if t5 is True, s5 will be a bad observation. However, 
+		    target = r5 + gamma * (1 - t5) * q_max(s5) = r5, which has no business with s5.
 		"""
 		assert self.count > self.history_length
 		indexes = self.sum_tree.stratified_sample(self.batch_size)
 		attempt_count = 0
 		for i in range(len(indexes)):
 			index = indexes[i]
-			if not self.is_valid_index(index):
+			if not self._is_valid_index(index):
 				while True:
 					index = self.sum_tree.sample()
-					if self.is_valid_index(index):
+					if self._is_valid_index(index):
 						break
 					attempt_count += 1
 					if attempt_count >= max_sample_attempts:
@@ -175,6 +149,7 @@ class PrioritizedReplay:
 		actions = self.actions[indexes]
 		rewards = self.rewards[indexes]
 		terminals = self.terminals[indexes]
+		indexes = np.asarray(indexes, dtype=np.int32)
 		priorities = self.get_priority(indexes)
 
 		return PERDataType(self.states, actions, rewards, self.next_states, terminals, \
@@ -190,13 +165,16 @@ class PrioritizedReplay:
 				[0, replay_capacity).
 			priorities: float, the corresponding priorities.
 		"""
-		indexes = np.asarray(indexes, dtype=np.int32)
-		priorities = np.asarray(priorities)
+		assert indexes.dtype == np.int32, \
+			('indexes must be int32s, given: {}'.format(indexes.dtype))
+		assert priorities.dtype == np.float32, \
+			('indexes must be float32s, given: {}'.format(priorities.dtype))
 		for index, priority in zip(indexes, priorities):
 			self.sum_tree.set(index, priority)
 
 	def get_priority(self, indexes):
-		indexes = np.asarray(indexes, dtype=np.int32)
+		assert indexes.dtype == np.int32, \
+			('indexes must be int32s, given: {}'.format(indexes.dtype))
 		priority_batch = np.empty((self.batch_size), dtype=np.float32)
 		for i, memory_index in enumerate(indexes):
 			priority_batch[i] = self.sum_tree.get(memory_index)
