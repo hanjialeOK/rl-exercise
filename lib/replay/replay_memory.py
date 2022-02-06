@@ -3,6 +3,7 @@ import random
 from collections import namedtuple
 
 from lib.replay.sum_tree import SumTree
+from lib.replay.binary_heap import *
 
 SampleDataType = namedtuple('sample_data', \
 	['states', 'actions', 'rewards', 'next_states', 'terminals'])
@@ -93,16 +94,16 @@ class ReplayMemory:
 
 		return SampleDataType(self.states, actions, rewards, self.next_states, terminals)
 
-class PrioritizedReplay(ReplayMemory):
+class ProportionalReplay(ReplayMemory):
 	def __init__(self, memory_size, batch_size):
-		super(PrioritizedReplay, self).__init__(memory_size, batch_size)
+		super(ProportionalReplay, self).__init__(memory_size, batch_size)
 		self.sum_tree = SumTree(memory_size)
 
 	def add(self, action, screen, reward, terminal, priority):
 		# Note: sum_tree.set should be executed before super()
 		# because self.current will +1 in super()
 		self.sum_tree.set(self.current, priority)
-		super(PrioritizedReplay, self).add(action, screen, reward, terminal)
+		super(ProportionalReplay, self).add(action, screen, reward, terminal)
 
 	def sample(self, max_sample_attempts=1000):
 		"""
@@ -179,3 +180,67 @@ class PrioritizedReplay(ReplayMemory):
 		for i, memory_index in enumerate(indexes):
 			priority_batch[i] = self.sum_tree.get(memory_index)
 		return priority_batch
+
+class RankBasedReplay(ReplayMemory):
+	def __init__(self, memory_size, batch_size):
+		super(RankBasedReplay, self).__init__(memory_size, batch_size)
+		self.heap = ArrayBasedHeap(memory_size)
+
+	def add(self, action, screen, reward, terminal, priority):
+		self.heap.insert(HeapItem(priority, self.current))
+		super(ProportionalReplay, self).add(action, screen, reward, terminal)
+
+	def sample(self, max_sample_attempts=1000):
+		"""
+		This process looks like:
+			...
+			<a0, s1, r1, t1, p1>
+			<a1, s2, r2, t2, p2>
+			<a2, s3, r3, t3, p3>
+			<a3, s4, r4, t4, p4>
+			<a4, s5, r5, t5, p5>  <=  index
+			...
+		Returns:
+			state = [s1, s2, s3, s4]
+			next_state = [s2, s3, s4, s5]
+			action = a4
+			reward = r5
+			terminal = t5
+			priority = p5
+		Note: 
+			if t5 is True, s5 will be a bad observation. However, 
+		    target = r5 + gamma * (1 - t5) * q_max(s5) = r5, which has no business with s5.
+		"""
+		assert self.count > self.history_length
+		indexes, priorities = self.heap.stratified_sample(self.batch_size)
+		attempt_count = 0
+		for i in range(len(indexes)):
+			index = indexes[i]
+			if not self._is_valid_index(index):
+				while True:
+					index, priority = self.heap.sample()
+					if self._is_valid_index(index):
+						break
+					attempt_count += 1
+					if attempt_count >= max_sample_attempts:
+						raise RuntimeError(
+							'Max sample attempts: Tried {} times but only sampled {}'
+							' valid indices. Batch size is {}'.
+							format(max_sample_attempts, i, self.batch_size))
+				indexes[i] = index
+				priorities[i] = priority
+			self.states[i, ...] = \
+				self.screens[(index - self.history_length):index, ...]
+			self.next_states[i, ...] = \
+				self.screens[(index - (self.history_length - 1)):(index + 1), ...]
+		actions = self.actions[indexes]
+		rewards = self.rewards[indexes]
+		terminals = self.terminals[indexes]
+		indexes = np.asarray(indexes, dtype=np.int32)
+		priorities = np.asarray(priorities, dtype=np.float32)
+
+		return PERDataType(self.states, actions, rewards, self.next_states, terminals, \
+						   indexes, priorities)
+
+	def set_priority(self, indexes, priorities):
+		pass
