@@ -4,7 +4,7 @@ import random
 import tensorflow as tf
 
 from lib.utils import json_serializable, History
-from lib.replay.replay_memory import ReplayMemory, PrioritizedReplay
+from lib.replay.replay_memory import ReplayMemory, ProportionalReplay
 
 def linearly_decaying_epsilon(decay_period, step, warmup_steps, epsilon):
 	"""Returns the current epsilon for the agent's epsilon-greedy policy.
@@ -32,7 +32,6 @@ class WrappedRMSPropOptimizer(tf.train.RMSPropOptimizer):
                  decay=0.9,
                  momentum=0.0,
                  epsilon=1e-10,
-                 use_locking=False,
                  centered=False,
                  name="RMSProp"):
 		self.config = json_serializable(locals())
@@ -41,10 +40,22 @@ class WrappedRMSPropOptimizer(tf.train.RMSPropOptimizer):
 			decay=decay,
 			momentum=momentum,
 			epsilon=epsilon,
-			use_locking=use_locking,
 			centered=centered,
-			name=name
-		)
+			name=name)
+
+	def get_config(self):
+		return self.config
+
+class WrappedAdamOptimizer(tf.train.AdamOptimizer):
+	def __init__(self,
+				 learning_rate=0.001,
+				 epsilon=1e-08,
+    			 name='Adam'):
+		self.config = json_serializable(locals())
+		super(WrappedAdamOptimizer, self).__init__(
+			learning_rate=learning_rate,
+			epsilon=epsilon,
+			name=name)
 
 	def get_config(self):
 		return self.config
@@ -387,11 +398,15 @@ class DDQNAgent(DQNAgent):
 class PERAgent(DQNAgent):
 	def __init__(self, sess, num_actions, summary_writer):
 		super(PERAgent, self).__init__(
-			sess=sess, num_actions=num_actions, summary_writer=summary_writer)
+			sess=sess,
+			num_actions=num_actions,
+			optimizer=WrappedAdamOptimizer(
+            	learning_rate=0.00025, epsilon=0.0003125),
+			summary_writer=summary_writer)
 
 	def _build_replay_buffer(self):
-		return PrioritizedReplay(memory_size=self.replay_capacity, \
-							     batch_size=self.batch_size)
+		return ProportionalReplay(memory_size=self.replay_capacity, \
+							      batch_size=self.batch_size)
 
 	def _build_train_op(self):
 		self.state_ph = tf.placeholder(shape=[None, 4, 84, 84], dtype=tf.uint8, name="state_ph")
@@ -405,14 +420,18 @@ class PERAgent(DQNAgent):
 		self.target_net_output = self.target_network(self.next_state_ph) # (32, 4)
 		self.q_argmax = tf.argmax(self.online_net_output, axis=1)[0] # (1, ) => ()
 
-		next_q_max = tf.reduce_max(self.target_net_output, axis=1) # (32, 4) => (32,)
-		target = self.rewards_ph + self.gamma * (1 - self.terminals_ph) * next_q_max # (32,)
+		self.online_next_q = self.online_network(self.next_state_ph) # (32, 4)
+		next_q_2d = tf.gather(self.target_net_output, \
+							  tf.expand_dims(tf.argmax(self.online_next_q, axis=1), axis=-1), \
+							  axis=1, batch_dims=1) # (32, 1)
+		next_q = tf.squeeze(next_q_2d) # (32, )
+		target = self.rewards_ph + self.gamma * (1 - self.terminals_ph) * next_q # (32,)
 		target_nograd = tf.stop_gradient(target)
 
 		q_value_chosen_2d = tf.gather(self.online_net_output, \
 							 		  tf.expand_dims(self.actions_ph, axis=-1), \
 									  axis=1, batch_dims=1) # (32, 1)
-		q_value_chosen = tf.squeeze(q_value_chosen_2d) # (32,)
+		q_value_chosen = tf.squeeze(q_value_chosen_2d) # (32,))
 
 		losses = tf.losses.huber_loss(
 			target_nograd, q_value_chosen, reduction=tf.losses.Reduction.NONE)
