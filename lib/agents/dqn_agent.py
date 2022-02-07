@@ -297,6 +297,8 @@ class DQNAgent():
 	def bundle(self, checkpoint_dir, iteration):
 		if not os.path.exists(checkpoint_dir):
 			raise
+		self.online_network.save_weights(
+			os.path.join(checkpoint_dir, f'best_model.h5'), save_format='h5')
 		self._saver.save(
 			self._sess, \
 			os.path.join(checkpoint_dir, 'tf_ckpt'), \
@@ -305,9 +307,11 @@ class DQNAgent():
 	def unbundle(self, checkpoint_dir, iteration):
 		if not os.path.exists(checkpoint_dir):
 			raise
-		self._saver.restore(self._sess, \
-							os.path.join(checkpoint_dir, \
-								'tf_ckpt-{}'.format(iteration)))
+		# self.online_network.load_weights(
+		# 	os.path.join(checkpoint_dir, f'best_model.h5'))
+		self._saver.restore(
+			self._sess, \
+			os.path.join(checkpoint_dir, f'tf_ckpt-{iteration}'))
 
 	def select_action(self):
 		if self.eval_mode:
