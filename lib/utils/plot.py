@@ -105,7 +105,7 @@ def get_datasets(logdir, legend=None, tag=None):
             exp_data.insert(len(exp_data.columns), 'Unit', unit)
             exp_data.insert(len(exp_data.columns), 'Condition', condition)
             datasets.append(exp_data)
-    return datasets
+    return datasets, condition
 
 def main(args):
     # Check whether the logdirs are valid.
@@ -125,12 +125,14 @@ def main(args):
     data = []
     if args.legend:
         for logdir, legend in zip(logdirs, args.legend):
-            print(f'{logdir} -> {legend}')
-            data += get_datasets(logdir=logdir, legend=legend, tag=args.tag)
+            datasets, cond = get_datasets(logdir=logdir, legend=legend, tag=args.tag)
+            data += datasets
+            print(f'{logdir} -> {cond}, {units[cond]}')
     else:
         for logdir in logdirs:
-            print(logdir)
-            data += get_datasets(logdir=logdir, tag=args.tag)
+            datasets, cond = get_datasets(logdir=logdir, tag=args.tag)
+            data += datasets
+            print(f'{logdir} -> {cond}, {units[cond]}')
 
     print('\n' + '='*DIV_LINE_WIDTH)
     print('Plotting...')
