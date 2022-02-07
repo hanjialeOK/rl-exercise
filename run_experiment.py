@@ -69,6 +69,7 @@ class Runner():
 
 		self.iteration = 0
 		self.total_episode = 0
+		self.max_episode_reward = 0
 		self.PhaseDataType = namedtuple('PhaseDataType', \
 			['num_episodes', 'average_rewrd', 'average_steps_per_second'])
 
@@ -157,8 +158,12 @@ class Runner():
 		])
 		self._summary_writer.add_summary(summary, self.iteration)
 
-	def _checkpoint_experiment(self):
-		self._agent.bundle(self._checkpoint_dir, self.iteration)
+	# Save 4 best models according to eval_data.average_rewrd.
+	def _checkpoint_experiment(self, eval_data):
+		if eval_data.average_rewrd >= self.max_episode_reward:
+			print(f'Saving weights into {self._checkpoint_dir}')
+			self._agent.bundle(self._checkpoint_dir, self.iteration)
+			self.max_episode_reward = eval_data.average_rewrd
 
 	def _log_experiment(self, eval_data):
 		with open(self._progress_txt, 'a') as f:
@@ -169,11 +174,18 @@ class Runner():
 			train_data = self._run_one_phase(min_steps=self._min_train_steps)
 			eval_data = self._run_one_phase(min_steps=self._evaluation_steps, eval_mode=True)
 			self._save_tensorboard_summaries(train_data, eval_data)
-			self._checkpoint_experiment()
+			self._checkpoint_experiment(eval_data)
 			self._log_experiment(eval_data)
 		print(f"\nResults have been saved into {self._base_dir}")
 		self._summary_writer.flush()
 		self._env.close()
+
+	def test_restore(self, checkpoint_dir, iteration):
+		print('Loading weights from {}'
+			  .format(os.path.join(checkpoint_dir, f'tf_ckpt-{iteration}')))
+		self._agent.unbundle(checkpoint_dir, iteration)
+		for _ in range(10):
+			self._run_one_phase(min_steps=self._evaluation_steps, eval_mode=True)
 
 def main(args):
 	if not os.path.exists(args.disk_dir):
