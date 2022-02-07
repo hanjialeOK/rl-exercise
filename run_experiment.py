@@ -18,10 +18,10 @@ def create_agent(sess, num_actions, exp_name=None, summary_writer=None):
 	elif exp_name == 'ddqn':
 		return DDQNAgent(
 			sess=sess, num_actions=num_actions, summary_writer=summary_writer)
-	elif exp_name == 'per':
+	elif exp_name == 'prior':
 		return PERAgent(
 			sess=sess, num_actions=num_actions, summary_writer=summary_writer)
-	elif exp_name == 'dueling':
+	elif exp_name == 'duel':
 		return DuelingAgent(
 			sess=sess, num_actions=num_actions, summary_writer=summary_writer)
 	else:
@@ -181,7 +181,7 @@ def main(args):
 	timestamp = time.strftime("%Y-%m-%d-%H_%M_%S", time.localtime(time.time()))
 	dir_name = args.dir_name or (args.exp_name + '-' + timestamp)
 	exp_name = args.exp_name
-	env_name = '{}NoFrameskip-v0'.format(args.env_name)
+	env_name = f"{args.env_name}NoFrameskip-{'v0' if args.sticky else 'v4'}"
 	base_dir = os.path.join(args.disk_dir, f"my_results/{env_name}/{dir_name}")
 	if not os.path.exists(base_dir):
 		os.makedirs(base_dir)
@@ -200,8 +200,10 @@ if __name__ == '__main__':
 	parser = ArgumentParser()
 	parser.add_argument('--dir_name', type=str, default=None, help='Dir name')
 	parser.add_argument('--exp_name', type=str, default='dqn', help='Experiment name', \
-						choices=['dqn', 'ddqn', 'per', 'dueling'])
+						choices=['dqn', 'ddqn', 'prior', 'duel', \
+								 'ddqn+prior', 'ddqn+duel'])
 	parser.add_argument('--env_name', type=str, default='Breakout', help='Env name')
+	parser.add_argument('--sticky', action='store_true', help='Sticky actions')
 	parser.add_argument('--disk_dir', type=str, default='/data/hanjl', help='Data disk dir')
 	args, unknown_args = parser.parse_known_args()
 	main(args)
