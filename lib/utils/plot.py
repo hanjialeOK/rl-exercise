@@ -146,6 +146,12 @@ def main(args):
     plt.savefig(f'{args.name}.pdf')
     print(f"Saved into {os.path.abspath(f'{args.name}.pdf')}")
 
+"""
+Usage:
+    python rl-exercise/lib/utils/plot.py --logdir data/bench_dqn
+    data/bench_ddqn data/bench_dueling --xaxis Iteration --value Value
+    --smooth 8 --tag exp_name --legend my_dqn my_ddqn my_dueling
+"""
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--logdir', required=True, nargs='*')
