@@ -47,7 +47,7 @@ class AtariPreprocessing(object):
 	"""
 
 	def __init__(self, environment, frame_skip=4, terminal_on_life_loss=False,
-				 screen_size=84):
+				 screen_size=84, max_random_start=30):
 		"""Constructor for an Atari 2600 preprocessor.
 		Args:
 			environment: Gym environment whose observations are preprocessed.
@@ -70,6 +70,7 @@ class AtariPreprocessing(object):
 		self.terminal_on_life_loss = terminal_on_life_loss
 		self.frame_skip = frame_skip
 		self.screen_size = screen_size
+		self.max_random_start = max_random_start
 
 		obs_dims = self.environment.observation_space
 		# Stores temporary observations used for pooling over two successive
@@ -116,6 +117,21 @@ class AtariPreprocessing(object):
 		self.environment.reset()
 		self.lives = self.environment.ale.lives()
 		self._fetch_grayscale_observation(self.screen_buffer[0])
+		self.screen_buffer[1].fill(0)
+		return self._pool_and_resize()
+
+	def new_random_game(self):
+		"""Resets the environment.
+		Returns:
+			observation: numpy array, the initial observation emitted by the
+			environment.
+		"""
+		self.environment.reset()
+		for _ in range(random.randint(0, self.max_random_start)):
+			action = random.randint(0, self.environment.action_space.n - 1)
+			self.environment.step(action)
+			self._fetch_grayscale_observation(self.screen_buffer[0])
+		self.lives = self.environment.ale.lives()
 		self.screen_buffer[1].fill(0)
 		return self._pool_and_resize()
 
