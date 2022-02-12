@@ -3,7 +3,7 @@ import os
 import random
 import tensorflow as tf
 
-from lib.utils import json_serializable, History
+from lib.utils.json_tools import json_serializable
 from lib.replay.circular_replay_buffer import WrappedReplayBuffer
 from lib.replay.prioritized_replay_buffer import WrappedProportionalReplayBuffer
 
@@ -208,7 +208,7 @@ class DQNAgent():
         self._optimizer = optimizer
         self._summary_writer = summary_writer
         self._summary_writing_frequency = summary_writing_frequency
-        self._history = History()
+        self._history = np.zeros(shape=(1, 4, 84, 84), dtype=np.uint8)
         self._replay = self._build_replay_buffer()
         self._build_networks()
         self._train_op = self._build_train_op()
@@ -340,13 +340,18 @@ class DQNAgent():
         if random.random() <= epsilon:
             return random.randint(0, self._num_actions - 1)
         else:
-            return self._sess.run(self.q_argmax, {self.state_ph: self._history.get()})
+            return self._sess.run(self.q_argmax, {self.state_ph: self._history})
 
     def _store_transition(self, action, observation, reward, terminal):
         self._replay.add(action, observation, reward, terminal)
 
+    def _record_observation(self, observation):
+        assert observation.shape == (84, 84)
+        self._history[0, :-1, ...] = self._history[0, 1:, ...]
+        self._history[0, -1, ...] = observation
+
     def step(self, action, observation, reward, terminal):
-        self._history.add(observation)
+        self._record_observation(observation)
         # If eval, store and train are no longer needed.
         if self._eval_mode:
             return
@@ -369,7 +374,7 @@ class DQNAgent():
 
     def begin_episode(self, observation):
         for _ in range(4):
-            self._history.add(observation)
+            self._record_observation(observation)
 
 class DDQNAgent(DQNAgent):
     def __init__(self, sess, num_actions, summary_writer):

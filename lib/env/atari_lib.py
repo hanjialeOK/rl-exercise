@@ -4,7 +4,7 @@ import cv2
 import gym
 from gym.spaces.box import Box
 
-from lib.utils import json_serializable
+from lib.utils.json_tools import json_serializable
 
 def create_atari_environment(game_name=None, sticky_actions=True):
 	"""Wraps an Atari 2600 Gym environment with some basic preprocessing.

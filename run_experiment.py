@@ -6,10 +6,10 @@ import json
 from argparse import ArgumentParser
 from collections import namedtuple
 
-from lib.utils import json_serializable
+from lib.utils.json_tools import json_serializable
 from lib.agents.dqn_agent import *
 from lib.agents.rainbow_agent import *
-from lib.env.atari import create_atari_environment
+from lib.env.atari_lib import create_atari_environment
 
 def create_agent(sess, num_actions, exp_name=None, summary_writer=None):
     assert exp_name is not None
