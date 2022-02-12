@@ -209,6 +209,7 @@ class DQNAgent():
         self._summary_writer = summary_writer
         self._summary_writing_frequency = summary_writing_frequency
         self._history = np.zeros(shape=(1, 4, 84, 84), dtype=np.uint8)
+        # Note: _build_replay must be ahead of _build_networks
         self._replay = self._build_replay_buffer()
         self._build_networks()
         self._train_op = self._build_train_op()
@@ -226,9 +227,20 @@ class DQNAgent():
         return WrappedReplayBuffer(replay_capacity=self._replay_capacity, \
                                    batch_size=self._batch_size)
 
+    def _create_network(self, name):
+        network = NatureDQNNetwork(num_actions=self._num_actions, name=name)
+        return network
+
     def _build_networks(self):
-        self.online_network = NatureDQNNetwork(num_actions=self._num_actions, name="online")
-        self.target_network = NatureDQNNetwork(num_actions=self._num_actions, name="target")
+        self.online_network = self._create_network(name="online")
+        self.target_network = self._create_network(name="target")
+
+        self.state_ph = tf.placeholder(shape=[1, 4, 84, 84], dtype=tf.uint8, name="state_ph")
+        self.replay_states = tf.cast(self._replay.transition['states'], tf.uint8)
+        self.replay_actions = tf.cast(self._replay.transition['actions'], tf.int32)
+        self.replay_rewards = tf.cast(self._replay.transition['rewards'], tf.float32)
+        self.replay_next_states = tf.cast(self._replay.transition['next_states'], tf.uint8)
+        self.replay_terminals = tf.cast(self._replay.transition['terminals'], tf.float32)
 
     # Note: Required to be called after _build_train_op(), otherwise return []
     def _get_var_list(self, name='online'):
@@ -245,21 +257,12 @@ class DQNAgent():
         return target
 
     def _build_train_op(self):
-        self.state_ph = tf.placeholder(shape=[1, 4, 84, 84], dtype=tf.uint8, name="state_ph")
-        self.replay_states = tf.cast(self._replay.transition['states'], tf.uint8)
-        self.replay_actions = tf.cast(self._replay.transition['actions'], tf.int32)
-        self.replay_rewards = tf.cast(self._replay.transition['rewards'], tf.float32)
-        self.replay_next_states = tf.cast(self._replay.transition['next_states'], tf.uint8)
-        self.replay_terminals = tf.cast(self._replay.transition['terminals'], tf.float32)
-
         self.online_net_output = self.online_network(self.state_ph) # (1, 4)
         self.online_net_replay_output = self.online_network(self.replay_states) # (32, 4)
         self.target_net_replay_output = self.target_network(self.replay_next_states) # (32, 4)
         self.q_argmax = tf.argmax(self.online_net_output, axis=1)[0] # (1, ) => ()
-
         # Target
         target_nograd = tf.stop_gradient(self._build_target_q_op())
-
         # Online
         q_value_chosen_2d = tf.gather(self.online_net_replay_output, \
                                        tf.expand_dims(self.replay_actions, axis=-1), \
@@ -407,12 +410,6 @@ class PERAgent(DQNAgent):
                                                batch_size=self._batch_size)
 
     def _build_train_op(self):
-        self.state_ph = tf.placeholder(shape=[1, 4, 84, 84], dtype=tf.uint8, name="state_ph")
-        self.replay_states = tf.cast(self._replay.transition['states'], tf.uint8)
-        self.replay_actions = tf.cast(self._replay.transition['actions'], tf.int32)
-        self.replay_rewards = tf.cast(self._replay.transition['rewards'], tf.float32)
-        self.replay_next_states = tf.cast(self._replay.transition['next_states'], tf.uint8)
-        self.replay_terminals = tf.cast(self._replay.transition['terminals'], tf.float32)
         self.replay_indices = self._replay.transition['indices']
         self.replay_probs = tf.cast(self._replay.transition['priorities'], tf.float32)
 
@@ -482,6 +479,6 @@ class DuelingAgent(DQNAgent):
             num_actions=num_actions,
             summary_writer=summary_writer)
 
-    def _build_networks(self):
-        self.online_network = DuelingNetwork(num_actions=self._num_actions, name="online")
-        self.target_network = DuelingNetwork(num_actions=self._num_actions, name="target")
+    def _create_network(self, name):
+        network = DuelingNetwork(num_actions=self._num_actions, name=name)
+        return network

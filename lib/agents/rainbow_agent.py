@@ -84,15 +84,12 @@ class C51Agent(DQNAgent):
                 learning_rate=0.00025, epsilon=0.0003125),
             summary_writer=summary_writer)
 
-    def _build_networks(self):
-        self.online_network = C51Network(num_actions=self._num_actions,
-                                         num_atoms=self._num_atoms,
-                                         support=self._support,
-                                         name="online")
-        self.target_network = C51Network(num_actions=self._num_actions,
-                                         num_atoms=self._num_atoms,
-                                         support=self._support,
-                                         name="target")
+    def _create_network(self, name):
+        network = C51Network(num_actions=self._num_actions,
+                             num_atoms=self._num_atoms,
+                             support=self._support,
+                             name=name)
+        return network
 
     def _build_target_distribution(self):
         """Builds the C51 target distribution as per Bellemare et al. (2017).
@@ -130,20 +127,14 @@ class C51Agent(DQNAgent):
         return self._project_distribution(target_support, next_probabilities, self._support)
 
     def _build_train_op(self):
-        self.state_ph = tf.placeholder(shape=[1, 4, 84, 84], dtype=tf.uint8, name="state_ph")
-        self.replay_states = tf.cast(self._replay.transition['states'], tf.uint8)
-        self.replay_actions = tf.cast(self._replay.transition['actions'], tf.int32)
-        self.replay_rewards = tf.cast(self._replay.transition['rewards'], tf.float32)
-        self.replay_next_states = tf.cast(self._replay.transition['next_states'], tf.uint8)
-        self.replay_terminals = tf.cast(self._replay.transition['terminals'], tf.float32)
-
         self.online_net_output = self.online_network(self.state_ph) # (1, 4)
         self.online_net_replay_output = self.online_network(self.replay_states) # (32, 4)
         self.target_net_replay_output = self.target_network(self.replay_next_states) # (32, 4)
         self.q_argmax = tf.argmax(self.online_net_output.q_values, axis=1)[0] # (1, ) => ()
 
-        # target
+        # Target
         target_distribution = tf.stop_gradient(self._build_target_distribution()) # (32, 51)
+        # Online
         indices = tf.range(tf.shape(self.online_net_replay_output.logits)[0])[:, None] # (32, 1)
         reshaped_actions = tf.concat([indices, self.replay_actions[:, None]], axis=1) # (32, 2)
         chosen_action_logits = tf.gather_nd(self.online_net_replay_output.logits,
