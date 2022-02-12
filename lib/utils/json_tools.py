@@ -10,11 +10,11 @@ def is_jsonable(x):
         return False
 
 def json_serializable(x):
-	assert isinstance(x, dict)
-	black_list = []
-	for key in x.keys():
-		if not is_jsonable(x[key]):
-			black_list.append(key)
-	for key in black_list:
-		x.pop(key)
-	return x
+    assert isinstance(x, dict)
+    black_list = []
+    for key in x.keys():
+        if not is_jsonable(x[key]):
+            black_list.append(key)
+    for key in black_list:
+        x.pop(key)
+    return x
