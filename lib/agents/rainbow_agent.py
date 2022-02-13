@@ -72,7 +72,28 @@ class C51Network(tf.keras.Model):
         return C51NetworkType(q_values, logits, probabilities)
 
 class C51Agent(DQNAgent):
-    def __init__(self, sess, num_actions, summary_writer, num_atoms=51, vmin=None, vmax=10.):
+    def __init__(self,
+                 sess,
+                 num_actions,
+                 replay_capacity=1000000,
+                 replay_min_size=50000,
+                 update_period=4,
+                 target_update_period=10000,
+                 epsilon_train=0.01,
+                 epsilon_eval=0.001,
+                 epsilon_decay_period=1000000,
+                 gamma=0.99,
+                 batch_size=32,
+                 eval_mode=False,
+                 max_tf_checkpoints_to_keep=4,
+                 optimizer=WrappedAdamOptimizer(
+                     learning_rate=0.00025,
+                     epsilon=0.0003125),
+                 summary_writer=None,
+                 summary_writing_frequency=500,
+                 num_atoms=51,
+                 vmin=None,
+                 vmax=10.):
         vmax = float(vmax)
         vmin = vmin if vmin else -vmax
         self._num_atoms = num_atoms
@@ -80,9 +101,20 @@ class C51Agent(DQNAgent):
         super(C51Agent, self).__init__(
             sess=sess,
             num_actions=num_actions,
-            optimizer=WrappedAdamOptimizer(
-                learning_rate=0.00025, epsilon=0.0003125),
-            summary_writer=summary_writer)
+            replay_capacity=replay_capacity,
+            replay_min_size=replay_min_size,
+            update_period=update_period,
+            target_update_period=target_update_period,
+            epsilon_train=epsilon_train,
+            epsilon_eval=epsilon_eval,
+            epsilon_decay_period=epsilon_decay_period,
+            gamma=gamma,
+            batch_size=batch_size,
+            eval_mode=eval_mode,
+            max_tf_checkpoints_to_keep=max_tf_checkpoints_to_keep,
+            optimizer=optimizer,
+            summary_writer=summary_writer,
+            summary_writing_frequency=summary_writing_frequency)
 
     def _create_network(self, name):
         network = C51Network(num_actions=self._num_actions,
