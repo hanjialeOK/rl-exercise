@@ -207,7 +207,7 @@ class DQNAgent():
         self._epsilon_decay_period = epsilon_decay_period
         self._gamma = gamma
         self._batch_size = batch_size
-        self._eval_mode = eval_mode
+        self.eval_mode = eval_mode
         self._max_tf_checkpoints_to_keep = max_tf_checkpoints_to_keep
         self._optimizer = optimizer
         self._summary_writer = summary_writer
@@ -336,7 +336,7 @@ class DQNAgent():
                 os.path.join(checkpoint_dir, f'tf_ckpt-{iteration}'))
 
     def select_action(self):
-        if self._eval_mode:
+        if self.eval_mode:
             epsilon = self._epsilon_eval
         else:
             epsilon = linearly_decaying_epsilon(
@@ -360,7 +360,7 @@ class DQNAgent():
     def step(self, action, observation, reward, terminal):
         self._record_observation(observation)
         # If eval, store and train are no longer needed.
-        if self._eval_mode:
+        if self.eval_mode:
             return
         # Store transition
         self._store_transition(action, observation, reward, terminal)
