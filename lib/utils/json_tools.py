@@ -2,12 +2,14 @@ import numpy as np
 import random
 import json
 
+
 def is_jsonable(x):
     try:
         json.dumps(x)
         return True
     except:
         return False
+
 
 def json_serializable(x):
     assert isinstance(x, dict)

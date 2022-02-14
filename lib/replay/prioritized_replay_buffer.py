@@ -7,12 +7,14 @@ from lib.replay.circular_replay_buffer import ReplayMemory, ReplayElement, Wrapp
 from lib.replay.sum_tree import SumTree
 from lib.replay.binary_heap import *
 
-PERDataType = namedtuple('per_data', \
-    ['states', 'actions', 'rewards', 'next_states', 'terminals', 'indices', 'priorities'])
+PERDataType = namedtuple('per_data',
+                         ['states', 'actions', 'rewards', 'next_states', 'terminals', 'indices', 'priorities'])
+
 
 class ProportionalReplayMemory(ReplayMemory):
     def __init__(self, replay_capacity, batch_size):
-        super(ProportionalReplayMemory, self).__init__(replay_capacity, batch_size)
+        super(ProportionalReplayMemory, self).__init__(
+            replay_capacity, batch_size)
         self._index_dtype = np.int32
         self._priority_dtype = np.float32
         self._sum_tree = SumTree(replay_capacity)
@@ -27,7 +29,8 @@ class ProportionalReplayMemory(ReplayMemory):
         # Note: sum_tree.set should be executed before super()
         # because self._current will +1 in super()
         self._sum_tree.set(self._current, priority)
-        super(ProportionalReplayMemory, self).add(action, screen, reward, terminal)
+        super(ProportionalReplayMemory, self).add(
+            action, screen, reward, terminal)
 
     def sample(self, max_sample_attempts=1000):
         """
@@ -46,8 +49,8 @@ class ProportionalReplayMemory(ReplayMemory):
             reward = r5
             terminal = t5
             priority = p5
-        Note: 
-            if t5 is True, s5 will be a bad observation. However, 
+        Note:
+            if t5 is True, s5 will be a bad observation. However,
             target = r5 + gamma * (1 - t5) * q_max(s5) = r5, which has no business with s5.
         """
         assert self.count > self._history_length
@@ -70,14 +73,15 @@ class ProportionalReplayMemory(ReplayMemory):
             self._states[i, ...] = \
                 self._screens[(index - self._history_length):index, ...]
             self._next_states[i, ...] = \
-                self._screens[(index - (self._history_length - 1)):(index + 1), ...]
+                self._screens[(index - (self._history_length - 1))
+                               :(index + 1), ...]
         actions = self._actions[indices]
         rewards = self._rewards[indices]
         terminals = self._terminals[indices]
         indices = np.asarray(indices, dtype=self._index_dtype)
         priorities = self.get_priority(indices)
 
-        return PERDataType(self._states, actions, rewards, self._next_states, terminals, \
+        return PERDataType(self._states, actions, rewards, self._next_states, terminals,
                            indices, priorities)
 
     def max_priority(self):
@@ -100,10 +104,12 @@ class ProportionalReplayMemory(ReplayMemory):
     def get_priority(self, indices):
         assert indices.dtype == np.int32, \
             ('indices must be int32s, given: {}'.format(indices.dtype))
-        priority_batch = np.empty((self._batch_size), dtype=self._priority_dtype)
+        priority_batch = np.empty(
+            (self._batch_size), dtype=self._priority_dtype)
         for i, memory_index in enumerate(indices):
             priority_batch[i] = self._sum_tree.get(memory_index)
         return priority_batch
+
 
 class WrappedProportionalReplayBuffer(WrappedReplayBuffer):
     """Wrapper of ReplayBuffer with an in-graph sampling mechanism.
@@ -114,6 +120,7 @@ class WrappedProportionalReplayBuffer(WrappedReplayBuffer):
                            that requires any of these tensors will sample a new
                            transition.
     """
+
     def __init__(self, replay_capacity, batch_size):
         super(WrappedProportionalReplayBuffer, self).__init__(
             replay_capacity=replay_capacity,

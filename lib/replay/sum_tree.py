@@ -3,6 +3,7 @@ import random
 
 import numpy as np
 
+
 class SumTree(object):
     """A sum tree data structure for storing replay priorities.
     A sum tree is a complete binary tree whose leaves contain values called
@@ -43,7 +44,7 @@ class SumTree(object):
         assert isinstance(capacity, int)
         if capacity <= 0:
             raise ValueError('Sum tree capacity should be positive. Got: {}'.
-                            format(capacity))
+                             format(capacity))
 
         self.nodes = []
         tree_depth = int(math.ceil(np.log2(capacity)))
@@ -147,7 +148,7 @@ class SumTree(object):
         """
         if value < 0.0:
             raise ValueError('Sum tree values should be nonnegative. Got {}'.
-                            format(value))
+                             format(value))
         self.max_recorded_priority = max(value, self.max_recorded_priority)
 
         delta_value = value - self.nodes[-1][node_index]
@@ -159,7 +160,8 @@ class SumTree(object):
             node_index //= 2
 
         assert node_index == 0, ('Sum tree traversal failed, final node index '
-                                'is not 0.')
+                                 'is not 0.')
+
 
 if __name__ == '__main__':
     tree = SumTree(10)

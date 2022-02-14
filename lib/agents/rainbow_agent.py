@@ -9,6 +9,7 @@ from lib.agents.dqn_agent import DQNAgent, WrappedAdamOptimizer
 C51NetworkType = namedtuple(
     'c51_network', ['q_values', 'logits', 'probabilities'])
 
+
 class C51Network(tf.keras.Model):
     """The convolutional network used to compute agent's return distributions."""
 
@@ -71,6 +72,7 @@ class C51Network(tf.keras.Model):
         q_values = tf.reduce_sum(self.support * probabilities, axis=2)
         return C51NetworkType(q_values, logits, probabilities)
 
+
 class C51Agent(DQNAgent):
     def __init__(self,
                  sess,
@@ -97,7 +99,7 @@ class C51Agent(DQNAgent):
         vmax = float(vmax)
         vmin = vmin if vmin else -vmax
         self._num_atoms = num_atoms
-        self._support = tf.linspace(vmin, vmax, num_atoms) # (51,)
+        self._support = tf.linspace(vmin, vmax, num_atoms)  # (51,)
         super(C51Agent, self).__init__(
             sess=sess,
             num_actions=num_actions,
@@ -139,38 +141,47 @@ class C51Agent(DQNAgent):
         batch_size = self._batch_size
 
         # size of tiled_support: batch_size x num_atoms
-        tiled_support = tf.tile(self._support, [batch_size]) # (51x32,)
-        tiled_support = tf.reshape(tiled_support, [batch_size, self._num_atoms]) # (32, 51)
+        tiled_support = tf.tile(self._support, [batch_size])  # (51x32,)
+        tiled_support = tf.reshape(
+            tiled_support, [batch_size, self._num_atoms])  # (32, 51)
 
         target_support = self.replay_rewards[:, None] + \
-            self._gamma * (1.0 - self.replay_terminals[:, None]) * tiled_support # (32, 51)
+            self._gamma * \
+            (1.0 - self.replay_terminals[:, None]) * tiled_support  # (32, 51)
 
         next_qt_argmax = tf.argmax(
-            self.target_net_replay_output.q_values, axis=1)[:, None] # (32, 1)
-        batch_indices = tf.range(tf.cast(batch_size, tf.int64))[:, None] # (32, 1)
+            self.target_net_replay_output.q_values, axis=1)[:, None]  # (32, 1)
+        batch_indices = tf.range(
+            tf.cast(batch_size, tf.int64))[:, None]  # (32, 1)
         batch_indexed_next_qt_argmax = tf.concat(
-            [batch_indices, next_qt_argmax], axis=1) # (32, 2)
+            [batch_indices, next_qt_argmax], axis=1)  # (32, 2)
 
         # next_probabilities (32, 51)
         next_probabilities = tf.gather_nd(
-            self.target_net_replay_output.probabilities, # (32, 4, 51)
-            batch_indexed_next_qt_argmax) # (32, 2)
+            self.target_net_replay_output.probabilities,  # (32, 4, 51)
+            batch_indexed_next_qt_argmax)  # (32, 2)
 
         return self._project_distribution(target_support, next_probabilities, self._support)
 
     def _build_train_op(self):
-        self.online_net_output = self.online_network(self.state_ph) # (1, 4)
-        self.online_net_replay_output = self.online_network(self.replay_states) # (32, 4)
-        self.target_net_replay_output = self.target_network(self.replay_next_states) # (32, 4)
-        self.q_argmax = tf.argmax(self.online_net_output.q_values, axis=1)[0] # (1, ) => ()
+        self.online_net_output = self.online_network(self.state_ph)  # (1, 4)
+        self.online_net_replay_output = self.online_network(
+            self.replay_states)  # (32, 4)
+        self.target_net_replay_output = self.target_network(
+            self.replay_next_states)  # (32, 4)
+        self.q_argmax = tf.argmax(
+            self.online_net_output.q_values, axis=1)[0]  # ()
 
         # Target
-        target_distribution = tf.stop_gradient(self._build_target_distribution()) # (32, 51)
+        target_distribution = tf.stop_gradient(
+            self._build_target_distribution())  # (32, 51)
         # Online
-        indices = tf.range(tf.shape(self.online_net_replay_output.logits)[0])[:, None] # (32, 1)
-        reshaped_actions = tf.concat([indices, self.replay_actions[:, None]], axis=1) # (32, 2)
+        indices = tf.range(
+            tf.shape(self.online_net_replay_output.logits)[0])[:, None]  # (32, 1)
+        reshaped_actions = tf.concat(
+            [indices, self.replay_actions[:, None]], axis=1)  # (32, 2)
         chosen_action_logits = tf.gather_nd(self.online_net_replay_output.logits,
-                                            reshaped_actions) # (32, 51)
+                                            reshaped_actions)  # (32, 51)
 
         losses = tf.nn.softmax_cross_entropy_with_logits(
             labels=target_distribution,
@@ -192,16 +203,20 @@ class C51Agent(DQNAgent):
         v_min, v_max = target_support[0], target_support[-1]
         batch_size = tf.shape(supports)[0]
         num_dims = tf.shape(target_support)[0]
-        clipped_support = tf.clip_by_value(supports, v_min, v_max)[:, None, :] # (32, 1, 51)
-        tiled_support = tf.tile([clipped_support], [1, 1, num_dims, 1]) # (1, 32, 51, 51)
-        reshaped_target_support = tf.tile(target_support[:, None], [batch_size, 1]) # (51x32, 1)
+        clipped_support = tf.clip_by_value(supports, v_min, v_max)[
+            :, None, :]  # (32, 1, 51)
+        tiled_support = tf.tile(
+            [clipped_support], [1, 1, num_dims, 1])  # (1, 32, 51, 51)
+        reshaped_target_support = tf.tile(target_support[:, None], [
+                                          batch_size, 1])  # (51x32, 1)
         reshaped_target_support = tf.reshape(reshaped_target_support,
-                                            [batch_size, num_dims, 1]) # (32, 51, 1)
-        numerator = tf.abs(tiled_support - reshaped_target_support) # (1, 32, 51, 51)
+                                             [batch_size, num_dims, 1])  # (32, 51, 1)
+        # (1, 32, 51, 51)
+        numerator = tf.abs(tiled_support - reshaped_target_support)
         quotient = 1 - (numerator / delta_z)
-        clipped_quotient = tf.clip_by_value(quotient, 0, 1) # (1, 32, 51, 51)
-        weights = weights[:, None, :] # (32, 1, 51)
-        inner_prod = clipped_quotient * weights # (1, 32, 51, 51)
-        projection = tf.reduce_sum(inner_prod, 3) # (1, 32, 51)
-        projection = tf.reshape(projection, [batch_size, num_dims]) # (32, 51)
+        clipped_quotient = tf.clip_by_value(quotient, 0, 1)  # (1, 32, 51, 51)
+        weights = weights[:, None, :]  # (32, 1, 51)
+        inner_prod = clipped_quotient * weights  # (1, 32, 51, 51)
+        projection = tf.reduce_sum(inner_prod, 3)  # (1, 32, 51)
+        projection = tf.reshape(projection, [batch_size, num_dims])  # (32, 51)
         return projection

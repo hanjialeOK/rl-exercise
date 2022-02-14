@@ -7,6 +7,7 @@ from lib.utils.json_tools import json_serializable
 from lib.replay.circular_replay_buffer import WrappedReplayBuffer
 from lib.replay.prioritized_replay_buffer import WrappedProportionalReplayBuffer
 
+
 def linearly_decaying_epsilon(decay_period, step, warmup_steps, epsilon):
     """Returns the current epsilon for the agent's epsilon-greedy policy.
     This follows the Nature DQN schedule of a linearly decaying epsilon (Mnih et
@@ -27,9 +28,11 @@ def linearly_decaying_epsilon(decay_period, step, warmup_steps, epsilon):
     bonus = np.clip(bonus, 0., 1. - epsilon)
     return epsilon + bonus
 
+
 def linearly_beta_schedule(schedule_timesteps, step, initial_p, final_p):
     fraction = min(float(step) / schedule_timesteps, 1.0)
     return initial_p + fraction * (final_p - initial_p)
+
 
 class WrappedRMSPropOptimizer(tf.train.RMSPropOptimizer):
     def __init__(self,
@@ -51,6 +54,7 @@ class WrappedRMSPropOptimizer(tf.train.RMSPropOptimizer):
     def get_config(self):
         return self.config
 
+
 class WrappedAdamOptimizer(tf.train.AdamOptimizer):
     def __init__(self,
                  learning_rate=0.001,
@@ -64,6 +68,7 @@ class WrappedAdamOptimizer(tf.train.AdamOptimizer):
 
     def get_config(self):
         return self.config
+
 
 class NatureDQNNetwork(tf.keras.Model):
     """The convolutional network used to compute the agent's Q-values."""
@@ -83,11 +88,14 @@ class NatureDQNNetwork(tf.keras.Model):
         # Setting names of the layers manually to make variable names more similar
         # with tf.slim variable names/checkpoints.
         self.conv1 = tf.keras.layers.Conv2D(32, [8, 8], strides=4, padding='same',
-              data_format='channels_first', activation=activation_fn, name='conv1')
+                                            data_format='channels_first',
+                                            activation=activation_fn, name='conv1')
         self.conv2 = tf.keras.layers.Conv2D(64, [4, 4], strides=2, padding='same',
-              data_format='channels_first', activation=activation_fn, name='conv2')
+                                            data_format='channels_first',
+                                            activation=activation_fn, name='conv2')
         self.conv3 = tf.keras.layers.Conv2D(64, [3, 3], strides=1, padding='same',
-              data_format='channels_first', activation=activation_fn, name='conv3')
+                                            data_format='channels_first',
+                                            activation=activation_fn, name='conv3')
         self.flatten = tf.keras.layers.Flatten()
         self.dense1 = tf.keras.layers.Dense(512, activation=activation_fn,
                                             name='fc1')
@@ -115,6 +123,7 @@ class NatureDQNNetwork(tf.keras.Model):
         x = self.dense2(x)
         return x
 
+
 class DuelingNetwork(tf.keras.Model):
     """The convolutional network used to compute the agent's Q-values."""
 
@@ -133,11 +142,14 @@ class DuelingNetwork(tf.keras.Model):
         # Setting names of the layers manually to make variable names more similar
         # with tf.slim variable names/checkpoints.
         self.conv1 = tf.keras.layers.Conv2D(32, [8, 8], strides=4, padding='same',
-              data_format='channels_first', activation=activation_fn, name='conv1')
+                                            data_format='channels_first',
+                                            activation=activation_fn, name='conv1')
         self.conv2 = tf.keras.layers.Conv2D(64, [4, 4], strides=2, padding='same',
-              data_format='channels_first', activation=activation_fn, name='conv2')
+                                            data_format='channels_first',
+                                            activation=activation_fn, name='conv2')
         self.conv3 = tf.keras.layers.Conv2D(64, [3, 3], strides=1, padding='same',
-              data_format='channels_first', activation=activation_fn, name='conv3')
+                                            data_format='channels_first',
+                                            activation=activation_fn, name='conv3')
         self.flatten = tf.keras.layers.Flatten()
         self.dense1 = tf.keras.layers.Dense(512, activation=activation_fn,
                                             name='fc1')
@@ -168,8 +180,10 @@ class DuelingNetwork(tf.keras.Model):
         advantage = self.dense2(advantage)
         value = self.dense3(x)
         value = self.dense4(value)
-        x = value + (advantage - tf.reduce_mean(advantage, axis=1, keep_dims=True))
+        x = value + (advantage -
+                     tf.reduce_mean(advantage, axis=1, keep_dims=True))
         return x
+
 
 class DQNAgent():
     def __init__(self,
@@ -187,9 +201,9 @@ class DQNAgent():
                  eval_mode=False,
                  max_tf_checkpoints_to_keep=4,
                  optimizer=WrappedRMSPropOptimizer(
-                     learning_rate=0.00025, \
-                     decay=0.95, \
-                     epsilon=1e-6, \
+                     learning_rate=0.00025,
+                     decay=0.95,
+                     epsilon=1e-6,
                      centered=False),
                  summary_writer=None,
                  summary_writing_frequency=500):
@@ -228,7 +242,7 @@ class DQNAgent():
         self._training_steps = 0
 
     def _build_replay_buffer(self):
-        return WrappedReplayBuffer(replay_capacity=self._replay_capacity, \
+        return WrappedReplayBuffer(replay_capacity=self._replay_capacity,
                                    batch_size=self._batch_size)
 
     def _create_network(self, name):
@@ -239,12 +253,18 @@ class DQNAgent():
         self.online_network = self._create_network(name="online")
         self.target_network = self._create_network(name="target")
 
-        self.state_ph = tf.placeholder(shape=[1, 4, 84, 84], dtype=tf.uint8, name="state_ph")
-        self.replay_states = tf.cast(self._replay.transition['states'], tf.uint8)
-        self.replay_actions = tf.cast(self._replay.transition['actions'], tf.int32)
-        self.replay_rewards = tf.cast(self._replay.transition['rewards'], tf.float32)
-        self.replay_next_states = tf.cast(self._replay.transition['next_states'], tf.uint8)
-        self.replay_terminals = tf.cast(self._replay.transition['terminals'], tf.float32)
+        self.state_ph = tf.placeholder(
+            shape=[1, 4, 84, 84], dtype=tf.uint8, name="state_ph")
+        self.replay_states = tf.cast(
+            self._replay.transition['states'], tf.uint8)
+        self.replay_actions = tf.cast(
+            self._replay.transition['actions'], tf.int32)
+        self.replay_rewards = tf.cast(
+            self._replay.transition['rewards'], tf.float32)
+        self.replay_next_states = tf.cast(
+            self._replay.transition['next_states'], tf.uint8)
+        self.replay_terminals = tf.cast(
+            self._replay.transition['terminals'], tf.float32)
 
     # Note: Required to be called after _build_train_op(), otherwise return []
     def _get_var_list(self, name='online'):
@@ -255,23 +275,29 @@ class DQNAgent():
         return trainable_variables
 
     def _build_target_q_op(self):
-        target_next_q_max = tf.reduce_max(self.target_net_replay_output, axis=1) # (32,)
+        target_next_q_max = tf.reduce_max(
+            self.target_net_replay_output, axis=1)  # (32,)
         target = self.replay_rewards + \
-                 self._gamma * (1.0 - self.replay_terminals) * target_next_q_max # (32,)
+            self._gamma * (1.0 - self.replay_terminals) * \
+            target_next_q_max  # (32,)
         return target
 
     def _build_train_op(self):
-        self.online_net_output = self.online_network(self.state_ph) # (1, 4)
-        self.online_net_replay_output = self.online_network(self.replay_states) # (32, 4)
-        self.target_net_replay_output = self.target_network(self.replay_next_states) # (32, 4)
-        self.q_argmax = tf.argmax(self.online_net_output, axis=1)[0] # (1, ) => ()
+        self.online_net_output = self.online_network(self.state_ph)  # (1, 4)
+        self.online_net_replay_output = self.online_network(
+            self.replay_states)  # (32, 4)
+        self.target_net_replay_output = self.target_network(
+            self.replay_next_states)  # (32, 4)
+        self.q_argmax = tf.argmax(self.online_net_output, axis=1)[
+            0]  # (1, ) => ()
         # Target
         target_nograd = tf.stop_gradient(self._build_target_q_op())
         # Online
-        q_value_chosen_2d = tf.gather(self.online_net_replay_output, \
-                                       tf.expand_dims(self.replay_actions, axis=-1), \
-                                      axis=1, batch_dims=1) # (32, 1)
-        q_value_chosen = tf.squeeze(q_value_chosen_2d) # (32,)
+        q_value_chosen_2d = tf.gather(self.online_net_replay_output,
+                                      tf.expand_dims(
+                                          self.replay_actions, axis=-1),
+                                      axis=1, batch_dims=1)  # (32, 1)
+        q_value_chosen = tf.squeeze(q_value_chosen_2d)  # (32,)
 
         losses = tf.losses.huber_loss(
             target_nograd, q_value_chosen, reduction=tf.losses.Reduction.NONE)
@@ -280,9 +306,9 @@ class DQNAgent():
             with tf.variable_scope('losses'):
                 tf.summary.scalar(name='huberloss', tensor=loss)
             with tf.variable_scope('q_estimate'):
-                tf.summary.scalar(name='max_q_value', \
+                tf.summary.scalar(name='max_q_value',
                                   tensor=tf.reduce_max(self.online_net_replay_output))
-                tf.summary.scalar(name='avg_q_value', \
+                tf.summary.scalar(name='avg_q_value',
                                   tensor=tf.reduce_mean(self.online_net_replay_output))
         return self._optimizer.minimize(loss, var_list=self._get_var_list())
 
@@ -290,9 +316,10 @@ class DQNAgent():
     def _build_state_processer(self):
         self.raw_state = tf.placeholder(shape=[210, 160, 3], dtype=tf.uint8)
         self.output = tf.image.rgb_to_grayscale(self.raw_state)
-        self.output = tf.image.crop_to_bounding_box(self.output, 34, 0, 160, 160)
+        self.output = tf.image.crop_to_bounding_box(
+            self.output, 34, 0, 160, 160)
         self.output = tf.image.resize(
-                self.output, [84, 84], method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
+            self.output, [84, 84], method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
         return tf.squeeze(self.output)
 
     def _build_sync_op(self):
@@ -310,8 +337,8 @@ class DQNAgent():
         return sync_qt_ops
 
     def _build_saver(self):
-        return tf.train.Saver(var_list=self._get_var_list(), \
-                max_to_keep=self._max_tf_checkpoints_to_keep)
+        return tf.train.Saver(var_list=self._get_var_list(),
+                              max_to_keep=self._max_tf_checkpoints_to_keep)
 
     def bundle(self, checkpoint_dir, iteration):
         if not os.path.exists(checkpoint_dir):
@@ -319,8 +346,8 @@ class DQNAgent():
         self.online_network.save_weights(
             os.path.join(checkpoint_dir, 'best_model.h5'), save_format='h5')
         self._saver.save(
-            self._sess, \
-            os.path.join(checkpoint_dir, 'tf_ckpt'), \
+            self._sess,
+            os.path.join(checkpoint_dir, 'tf_ckpt'),
             global_step=iteration)
 
     def unbundle(self, checkpoint_dir, iteration=None):
@@ -332,7 +359,7 @@ class DQNAgent():
                 os.path.join(checkpoint_dir, 'best_model.h5'))
         else:
             self._saver.restore(
-                self._sess, \
+                self._sess,
                 os.path.join(checkpoint_dir, f'tf_ckpt-{iteration}'))
 
     def select_action(self):
@@ -370,9 +397,10 @@ class DQNAgent():
                 self._sess.run(self._train_op)
 
                 if self._summary_writer is not None and \
-                    self._training_steps % self._summary_writing_frequency == 0:
+                        self._training_steps % self._summary_writing_frequency == 0:
                     summary = self._sess.run(self._merged_summaries)
-                    self._summary_writer.add_summary(summary, self._training_steps)
+                    self._summary_writer.add_summary(
+                        summary, self._training_steps)
 
             if self._training_steps % self._target_update_period == 0:
                 self._sess.run(self._sync_qt_ops)
@@ -382,6 +410,7 @@ class DQNAgent():
     def begin_episode(self, observation):
         for _ in range(4):
             self._record_observation(observation)
+
 
 class DDQNAgent(DQNAgent):
     def __init__(self,
@@ -399,9 +428,9 @@ class DDQNAgent(DQNAgent):
                  eval_mode=False,
                  max_tf_checkpoints_to_keep=4,
                  optimizer=WrappedRMSPropOptimizer(
-                     learning_rate=0.00025, \
-                     decay=0.95, \
-                     epsilon=1e-6, \
+                     learning_rate=0.00025,
+                     decay=0.95,
+                     epsilon=1e-6,
                      centered=False),
                  summary_writer=None,
                  summary_writing_frequency=500):
@@ -424,13 +453,16 @@ class DDQNAgent(DQNAgent):
             summary_writing_frequency=summary_writing_frequency)
 
     def _build_target_q_op(self):
-        online_next_q = self.online_network(self.replay_next_states) # (32, 4)
-        next_q_2d = tf.gather(self.target_net_replay_output, \
-                              tf.expand_dims(tf.argmax(online_next_q, axis=1), axis=-1), \
-                              axis=1, batch_dims=1) # (32, 1)
-        next_q = tf.squeeze(next_q_2d) # (32, )
-        target = self.replay_rewards + self._gamma * (1 - self.replay_terminals) * next_q # (32,)
+        online_next_q = self.online_network(self.replay_next_states)  # (32, 4)
+        next_q_2d = tf.gather(self.target_net_replay_output,
+                              tf.expand_dims(
+                                  tf.argmax(online_next_q, axis=1), axis=-1),
+                              axis=1, batch_dims=1)  # (32, 1)
+        next_q = tf.squeeze(next_q_2d)  # (32, )
+        target = self.replay_rewards + self._gamma * \
+            (1 - self.replay_terminals) * next_q  # (32,)
         return target
+
 
 class PERAgent(DDQNAgent):
     def __init__(self,
@@ -478,28 +510,33 @@ class PERAgent(DDQNAgent):
 
     def _build_replay_buffer(self):
         if self._replay_scheme not in ['uniform', 'prioritized']:
-            raise ValueError('Invalid replay scheme: {}'.format(self._replay_scheme))
+            raise ValueError(
+                'Invalid replay scheme: {}'.format(self._replay_scheme))
         return WrappedProportionalReplayBuffer(
-            replay_capacity=self._replay_capacity, \
+            replay_capacity=self._replay_capacity,
             batch_size=self._batch_size)
 
     def _build_train_op(self):
         self.replay_indices = self._replay.transition['indices']
-        self.replay_probs = tf.cast(self._replay.transition['priorities'], tf.float32)
+        self.replay_probs = tf.cast(
+            self._replay.transition['priorities'], tf.float32)
 
-        self.online_net_output = self.online_network(self.state_ph) # (1, 4)
-        self.online_net_replay_output = self.online_network(self.replay_states) # (32, 4)
-        self.target_net_replay_output = self.target_network(self.replay_next_states) # (32, 4)
-        self.q_argmax = tf.argmax(self.online_net_output, axis=1)[0] # (1, ) => ()
+        self.online_net_output = self.online_network(self.state_ph)  # (1, 4)
+        self.online_net_replay_output = self.online_network(
+            self.replay_states)  # (32, 4)
+        self.target_net_replay_output = self.target_network(
+            self.replay_next_states)  # (32, 4)
+        self.q_argmax = tf.argmax(self.online_net_output, axis=1)[0]  # ()
 
         # Target
         target_nograd = tf.stop_gradient(self._build_target_q_op())
 
         # Online
-        q_value_chosen_2d = tf.gather(self.online_net_replay_output, \
-                                      tf.expand_dims(self.replay_actions, axis=-1), \
-                                      axis=1, batch_dims=1) # (32, 1)
-        q_value_chosen = tf.squeeze(q_value_chosen_2d) # (32,)
+        q_value_chosen_2d = tf.gather(self.online_net_replay_output,
+                                      tf.expand_dims(
+                                          self.replay_actions, axis=-1),
+                                      axis=1, batch_dims=1)  # (32, 1)
+        q_value_chosen = tf.squeeze(q_value_chosen_2d)  # (32,)
 
         losses = tf.losses.huber_loss(
             target_nograd, q_value_chosen, reduction=tf.losses.Reduction.NONE)
@@ -533,10 +570,10 @@ class PERAgent(DDQNAgent):
                 with tf.variable_scope('losses'):
                     tf.summary.scalar(name='huberloss', tensor=loss)
                 with tf.variable_scope('q_estimate'):
-                    tf.summary.scalar(name='max_q_value', \
-                                    tensor=tf.reduce_max(self.online_net_replay_output))
-                    tf.summary.scalar(name='avg_q_value', \
-                                    tensor=tf.reduce_mean(self.online_net_replay_output))
+                    tf.summary.scalar(name='max_q_value',
+                                      tensor=tf.reduce_max(self.online_net_replay_output))
+                    tf.summary.scalar(name='avg_q_value',
+                                      tensor=tf.reduce_mean(self.online_net_replay_output))
             return self._optimizer.minimize(loss, var_list=self._get_var_list())
 
     def _store_transition(self, action, observation, reward, terminal):
@@ -545,6 +582,7 @@ class PERAgent(DDQNAgent):
         else:
             priority = self._replay.memory.max_priority()
         self._replay.add(action, observation, reward, terminal, priority)
+
 
 class DuelingAgent(DQNAgent):
     def __init__(self,
@@ -562,9 +600,9 @@ class DuelingAgent(DQNAgent):
                  eval_mode=False,
                  max_tf_checkpoints_to_keep=4,
                  optimizer=WrappedRMSPropOptimizer(
-                     learning_rate=0.00025, \
-                     decay=0.95, \
-                     epsilon=1e-6, \
+                     learning_rate=0.00025,
+                     decay=0.95,
+                     epsilon=1e-6,
                      centered=False),
                  summary_writer=None,
                  summary_writing_frequency=500):

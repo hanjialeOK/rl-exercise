@@ -11,6 +11,7 @@ from lib.agents.dqn_agent import *
 from lib.agents.rainbow_agent import *
 from lib.env.atari_lib import create_atari_environment
 
+
 def create_agent(sess, num_actions, exp_name=None, summary_writer=None):
     assert exp_name is not None
     if exp_name == 'dqn':
@@ -30,6 +31,7 @@ def create_agent(sess, num_actions, exp_name=None, summary_writer=None):
             sess=sess, num_actions=num_actions, summary_writer=summary_writer)
     else:
         raise ValueError('Unknown agent: {}'.format(exp_name))
+
 
 class Runner():
     def __init__(self,
@@ -64,8 +66,8 @@ class Runner():
         self._env = create_env_fn(env_name)
         num_actions = self._env.action_space.n
         # agent
-        self._agent = create_agent_fn(sess=self._sess, num_actions=num_actions, \
-                                       exp_name=exp_name, summary_writer=self._summary_writer)
+        self._agent = create_agent_fn(sess=self._sess, num_actions=num_actions,
+                                      exp_name=exp_name, summary_writer=self._summary_writer)
         self._summary_writer.add_graph(graph=tf.get_default_graph())
         self._sess.run(tf.global_variables_initializer())
 
@@ -75,8 +77,8 @@ class Runner():
         self._iteration = 0
         self._total_episodes = 0
         self._max_episode_reward = 0
-        self.PhaseDataType = namedtuple('PhaseDataType', \
-            ['num_episodes', 'average_reward', 'average_steps_per_second'])
+        self.PhaseDataType = namedtuple('PhaseDataType',
+                                        ['num_episodes', 'average_reward', 'average_steps_per_second'])
 
     def _create_directories(self):
         self._summary_dir = os.path.join(self._base_dir, "tf1_summary")
@@ -96,7 +98,8 @@ class Runner():
         observation = self._env.new_random_game()
         self._agent.begin_episode(observation)
         while True:
-            print(f"\rlength: {episode_length}, reward: {episode_reward}", end='')
+            print(
+                f"\rlength: {episode_length}, reward: {episode_reward}", end='')
 
             action = self._agent.select_action()
             observation, reward, terminal, _ = self._env.step(action)
@@ -128,7 +131,7 @@ class Runner():
         start_time = time.time()
 
         while step_count < min_steps:
-            print(f"\n@iter: {self._iteration}/{self._num_iterations}, train: {not eval_mode}, " \
+            print(f"\n@iter: {self._iteration}/{self._num_iterations}, train: {not eval_mode}, "
                   f"step: {step_count}/{min_steps}, total_ep: {self._total_episodes}")
             episode_length, episode_reward = self._run_one_episode()
             step_count += episode_length
@@ -137,10 +140,13 @@ class Runner():
             # episode_info
             if not eval_mode:
                 episode_summary = tf.Summary(value=[
-                    tf.Summary.Value(simple_value=episode_reward, tag="episode_info/reward"),
-                    tf.Summary.Value(simple_value=episode_length, tag="episode_info/length")
+                    tf.Summary.Value(simple_value=episode_reward,
+                                     tag="episode_info/reward"),
+                    tf.Summary.Value(simple_value=episode_length,
+                                     tag="episode_info/length")
                 ])
-                self._summary_writer.add_summary(episode_summary, self._total_episodes)
+                self._summary_writer.add_summary(
+                    episode_summary, self._total_episodes)
                 self._total_episodes += 1
         time_delta = time.time() - start_time
         average_steps_per_second = step_count / time_delta
@@ -177,7 +183,8 @@ class Runner():
     def run_experiment(self):
         for self._iteration in range(self._num_iterations):
             train_data = self._run_one_phase(min_steps=self._min_train_steps)
-            eval_data = self._run_one_phase(min_steps=self._evaluation_steps, eval_mode=True)
+            eval_data = self._run_one_phase(
+                min_steps=self._evaluation_steps, eval_mode=True)
             self._save_tensorboard_summaries(train_data, eval_data)
             self._checkpoint_experiment(eval_data)
             self._log_experiment(eval_data)
@@ -190,7 +197,9 @@ class Runner():
               .format(os.path.join(checkpoint_dir, f'tf_ckpt-{iteration}')))
         self._agent.unbundle(checkpoint_dir, iteration)
         for _ in range(10):
-            self._run_one_phase(min_steps=self._evaluation_steps, eval_mode=True)
+            self._run_one_phase(
+                min_steps=self._evaluation_steps, eval_mode=True)
+
 
 class StepAwareRunner():
     def __init__(self,
@@ -226,8 +235,8 @@ class StepAwareRunner():
         self._env = create_env_fn(env_name)
         num_actions = self._env.action_space.n
         # agent
-        self._agent = create_agent_fn(sess=self._sess, num_actions=num_actions, \
-                                       exp_name=exp_name, summary_writer=self._summary_writer)
+        self._agent = create_agent_fn(sess=self._sess, num_actions=num_actions,
+                                      exp_name=exp_name, summary_writer=self._summary_writer)
         self._summary_writer.add_graph(graph=tf.get_default_graph())
         self._sess.run(tf.global_variables_initializer())
 
@@ -256,7 +265,8 @@ class StepAwareRunner():
         observation = self._env.new_random_game()
         self._agent.begin_episode(observation)
         while True:
-            print(f"\rlength: {episode_length}, reward: {episode_reward}", end='')
+            print(
+                f"\rlength: {episode_length}, reward: {episode_reward}", end='')
 
             action = self._agent.select_action()
             observation, reward, terminal, _ = self._env.step(action)
@@ -287,7 +297,7 @@ class StepAwareRunner():
         self._agent.eval_mode = True
 
         while step_count < min_steps:
-            print(f"\n@iter: {self._iteration}/{self._num_iterations}, train: {False}, " \
+            print(f"\n@iter: {self._iteration}/{self._num_iterations}, train: {False}, "
                   f"step: {step_count}/{min_steps}, total_ep: {self._total_episodes}")
             episode_length, episode_reward = self._run_one_episode()
             step_count += episode_length
@@ -309,7 +319,8 @@ class StepAwareRunner():
         observation = self._env.new_random_game()
         self._agent.begin_episode(observation)
         for step in range(1, self._total_steps + 1):
-            print(f"\rlength: {episode_length}, reward: {episode_reward}", end='')
+            print(
+                f"\rlength: {episode_length}, reward: {episode_reward}", end='')
 
             action = self._agent.select_action()
             observation, reward, terminal, _ = self._env.step(action)
@@ -324,15 +335,18 @@ class StepAwareRunner():
                 self._agent.step(action, observation, reward_clip, True)
                 # Summary
                 episode_summary = tf.Summary(value=[
-                    tf.Summary.Value(simple_value=episode_reward, tag="episode_info/reward"),
-                    tf.Summary.Value(simple_value=episode_length, tag="episode_info/length")
+                    tf.Summary.Value(simple_value=episode_reward,
+                                     tag="episode_info/reward"),
+                    tf.Summary.Value(simple_value=episode_length,
+                                     tag="episode_info/length")
                 ])
-                self._summary_writer.add_summary(episode_summary, self._total_episodes)
+                self._summary_writer.add_summary(
+                    episode_summary, self._total_episodes)
                 self._total_episodes += 1
                 # Train data statistics
                 train_num_episodes += 1
                 train_sum_rewards += episode_reward
-                print(f"\n@iter: {self._iteration}/{self._num_iterations}, train: {True}, " \
+                print(f"\n@iter: {self._iteration}/{self._num_iterations}, train: {True}, "
                       f"step: {step % self._min_train_steps}/{self._min_train_steps}, "
                       f"total_ep: {self._total_episodes}")
                 # Episode restart
@@ -354,7 +368,8 @@ class StepAwareRunner():
                 train_average_steps_per_second = self._min_train_steps / time_delta
                 train_average_reward = train_sum_rewards / train_num_episodes
                 # Evaluate
-                eval_num_episodes, eval_average_reward = self._evaluate(self._evaluation_steps)
+                eval_num_episodes, eval_average_reward = self._evaluate(
+                    self._evaluation_steps)
                 # Summary
                 summary = tf.Summary(value=[
                     tf.Summary.Value(
@@ -387,6 +402,7 @@ class StepAwareRunner():
         self._summary_writer.flush()
         self._env.close()
 
+
 def main(args):
     if not os.path.exists(args.disk_dir):
         raise
@@ -399,23 +415,28 @@ def main(args):
         os.makedirs(base_dir)
     config = json_serializable(locals())
     # Runner
-    runner = StepAwareRunner(base_dir=base_dir, exp_name=exp_name, env_name=env_name)
+    runner = StepAwareRunner(
+        base_dir=base_dir, exp_name=exp_name, env_name=env_name)
     config['runner_config'] = runner.config
     # Save config_json
-    config_json = json.dumps(config, sort_keys=False, indent=4, separators=(',', ': '))
+    config_json = json.dumps(config, sort_keys=False,
+                             indent=4, separators=(',', ': '))
     with open(os.path.join(base_dir, "config.json"), 'w') as out:
         out.write(config_json)
     # Run
     runner.run_experiment()
 
+
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('--dir_name', type=str, default=None, help='Dir name')
-    parser.add_argument('--exp_name', type=str, default='dqn', help='Experiment name', \
-                        choices=['dqn', 'ddqn', 'prior', 'duel', 'c51',\
+    parser.add_argument('--exp_name', type=str, default='dqn', help='Experiment name',
+                        choices=['dqn', 'ddqn', 'prior', 'duel', 'c51',
                                  'ddqn+prior', 'ddqn+duel'])
-    parser.add_argument('--env_name', type=str, default='Breakout', help='Env name')
+    parser.add_argument('--env_name', type=str,
+                        default='Breakout', help='Env name')
     parser.add_argument('--sticky', action='store_true', help='Sticky actions')
-    parser.add_argument('--disk_dir', type=str, default='/data/hanjl', help='Data disk dir')
+    parser.add_argument('--disk_dir', type=str,
+                        default='/data/hanjl', help='Data disk dir')
     args, unknown_args = parser.parse_known_args()
     main(args)

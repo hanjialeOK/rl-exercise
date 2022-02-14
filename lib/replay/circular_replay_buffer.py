@@ -3,10 +3,11 @@ import random
 from collections import namedtuple, OrderedDict
 import tensorflow as tf
 
-ReplayDataType = namedtuple('sample_data', \
-    ['states', 'actions', 'rewards', 'next_states', 'terminals'])
+ReplayDataType = namedtuple('sample_data',
+                            ['states', 'actions', 'rewards', 'next_states', 'terminals'])
 
 ReplayElement = namedtuple('shape_type', ['name', 'shape', 'type'])
+
 
 class ReplayMemory:
     def __init__(self, replay_capacity, batch_size):
@@ -18,28 +19,33 @@ class ReplayMemory:
         self._reward_dtype = np.float32
         self._terminal_dtype = bool
         # Note: screen is next_state, after action
-        self._actions = np.empty(self._replay_capacity, dtype=self._action_dtype)
-        self._screens = np.empty((self._replay_capacity,) + self._screen_shape, dtype=self._screen_dtype)
-        self._rewards = np.empty(self._replay_capacity, dtype=self._reward_dtype)
-        self._terminals = np.empty(self._replay_capacity, dtype=self._terminal_dtype)
+        self._actions = np.empty(
+            self._replay_capacity, dtype=self._action_dtype)
+        self._screens = np.empty(
+            (self._replay_capacity,) + self._screen_shape, dtype=self._screen_dtype)
+        self._rewards = np.empty(
+            self._replay_capacity, dtype=self._reward_dtype)
+        self._terminals = np.empty(
+            self._replay_capacity, dtype=self._terminal_dtype)
         self._history_length = 4
         self._current = 0
         self.count = 0
 
         # pre-allocate states and next_states for minibatch
-        self._states = np.empty((self._batch_size, self._history_length) + self._screen_shape, \
+        self._states = np.empty((self._batch_size, self._history_length) + self._screen_shape,
                                 dtype=self._screen_dtype)
-        self._next_states = np.empty((self._batch_size, self._history_length) + self._screen_shape, \
-                                    dtype=self._screen_dtype)
+        self._next_states = np.empty((self._batch_size, self._history_length) + self._screen_shape,
+                                     dtype=self._screen_dtype)
         # transition_elements
         self.transition_elements = [
-            ReplayElement('states', (self._batch_size, self._history_length) + self._screen_shape, \
+            ReplayElement('states', (self._batch_size, self._history_length) + self._screen_shape,
                           self._screen_dtype),
             ReplayElement('actions', (self._batch_size,), self._action_dtype),
             ReplayElement('rewards', (self._batch_size,), self._reward_dtype),
-            ReplayElement('next_states', (self._batch_size, self._history_length) + self._screen_shape, \
+            ReplayElement('next_states', (self._batch_size, self._history_length) + self._screen_shape,
                           self._screen_dtype),
-            ReplayElement('terminals', (self._batch_size,), self._terminal_dtype)
+            ReplayElement('terminals', (self._batch_size,),
+                          self._terminal_dtype)
         ]
 
     def add(self, action, screen, reward, terminal):
@@ -80,8 +86,8 @@ class ReplayMemory:
             action = a4
             reward = r5
             terminal = t5
-        Note: 
-            if t5 is True, s5 will be a bad observation. However, 
+        Note:
+            if t5 is True, s5 will be a bad observation. However,
             target = r5 + gamma * (1 - t5) * q_max(s5) = r5, which has no business with s5.
         """
         assert self.count > self._history_length
@@ -110,6 +116,7 @@ class ReplayMemory:
 
         return ReplayDataType(self._states, actions, rewards, self._next_states, terminals)
 
+
 class WrappedReplayBuffer:
     """Wrapper of ReplayBuffer with an in-graph sampling mechanism.
     Usage:
@@ -119,6 +126,7 @@ class WrappedReplayBuffer:
                            that requires any of these tensors will sample a new
                            transition.
     """
+
     def __init__(self, replay_capacity, batch_size):
         self.memory = self._build_memory(replay_capacity, batch_size)
         self.transition = OrderedDict()
