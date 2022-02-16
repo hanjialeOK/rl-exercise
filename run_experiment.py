@@ -17,6 +17,9 @@ def create_agent(sess, num_actions, exp_name=None, summary_writer=None):
     if exp_name == 'dqn':
         return DQNAgent(
             sess=sess, num_actions=num_actions, summary_writer=summary_writer)
+    if exp_name == 'clipdqn':
+        return DQNAgent(
+            sess=sess, num_actions=num_actions, summary_writer=summary_writer)
     elif exp_name == 'ddqn':
         return DDQNAgent(
             sess=sess, num_actions=num_actions, summary_writer=summary_writer)
@@ -431,7 +434,7 @@ if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('--dir_name', type=str, default=None, help='Dir name')
     parser.add_argument('--exp_name', type=str, default='dqn', help='Experiment name',
-                        choices=['dqn', 'ddqn', 'prior', 'duel', 'c51',
+                        choices=['dqn', 'clipdqn', 'ddqn', 'prior', 'duel', 'c51',
                                  'ddqn+prior', 'ddqn+duel'])
     parser.add_argument('--env_name', type=str,
                         default='Breakout', help='Env name')

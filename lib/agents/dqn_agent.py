@@ -288,8 +288,7 @@ class DQNAgent():
             self.replay_states)  # (32, 4)
         self.target_net_replay_output = self.target_network(
             self.replay_next_states)  # (32, 4)
-        self.q_argmax = tf.argmax(self.online_net_output, axis=1)[
-            0]  # (1, ) => ()
+        self.q_argmax = tf.argmax(self.online_net_output, axis=1)[0]  # ()
         # Target
         target_nograd = tf.stop_gradient(self._build_target_q_op())
         # Online
@@ -410,6 +409,80 @@ class DQNAgent():
     def begin_episode(self, observation):
         for _ in range(4):
             self._record_observation(observation)
+
+
+class clippedDQN(DQNAgent):
+    def __init__(self,
+                 sess,
+                 num_actions,
+                 replay_capacity=1000000,
+                 replay_min_size=50000,
+                 update_period=4,
+                 target_update_period=10000,
+                 epsilon_train=0.01,
+                 epsilon_eval=0.001,
+                 epsilon_decay_period=1000000,
+                 gamma=0.99,
+                 batch_size=32,
+                 eval_mode=False,
+                 max_tf_checkpoints_to_keep=4,
+                 optimizer=WrappedRMSPropOptimizer(
+                     learning_rate=0.00025,
+                     decay=0.95,
+                     epsilon=1e-6,
+                     centered=False),
+                 summary_writer=None,
+                 summary_writing_frequency=500):
+        super(clippedDQN, self).__init__(
+            sess=sess,
+            num_actions=num_actions,
+            replay_capacity=replay_capacity,
+            replay_min_size=replay_min_size,
+            update_period=update_period,
+            target_update_period=target_update_period,
+            epsilon_train=epsilon_train,
+            epsilon_eval=epsilon_eval,
+            epsilon_decay_period=epsilon_decay_period,
+            gamma=gamma,
+            batch_size=batch_size,
+            eval_mode=eval_mode,
+            max_tf_checkpoints_to_keep=max_tf_checkpoints_to_keep,
+            optimizer=optimizer,
+            summary_writer=summary_writer,
+            summary_writing_frequency=summary_writing_frequency)
+
+    def _build_train_op(self):
+        self.online_net_output = self.online_network(self.state_ph)  # (1, 4)
+        self.online_net_replay_output = self.online_network(
+            self.replay_states)  # (32, 4)
+        self.target_net_replay_output = self.target_network(
+            self.replay_next_states)  # (32, 4)
+        self.q_argmax = tf.argmax(self.online_net_output, axis=1)[0]  # ()
+        # Target
+        target_nograd = tf.stop_gradient(self._build_target_q_op())
+        # Online
+        q_value_chosen_2d = tf.gather(self.online_net_replay_output,
+                                      tf.expand_dims(
+                                          self.replay_actions, axis=-1),
+                                      axis=1, batch_dims=1)  # (32, 1)
+        q_value_chosen = tf.squeeze(q_value_chosen_2d)  # (32,)
+
+        losses = tf.losses.huber_loss(
+            target_nograd, q_value_chosen, reduction=tf.losses.Reduction.NONE)
+        loss = tf.reduce_mean(losses)
+        if self._summary_writer is not None:
+            with tf.variable_scope('losses'):
+                tf.summary.scalar(name='huberloss', tensor=loss)
+            with tf.variable_scope('q_estimate'):
+                tf.summary.scalar(name='max_q_value',
+                                  tensor=tf.reduce_max(self.online_net_replay_output))
+                tf.summary.scalar(name='avg_q_value',
+                                  tensor=tf.reduce_mean(self.online_net_replay_output))
+        grads_and_vars = self._optimizer.compute_gradients(
+            loss, var_list=self._get_var_list())
+        capped_grads_and_vars = [(tf.clip_by_norm(grad, 10.0), var)
+                                 for grad, var in grads_and_vars]
+        return self._optimizer.apply_gradients(capped_grads_and_vars)
 
 
 class DDQNAgent(DQNAgent):
