@@ -470,6 +470,10 @@ class clippedDQN(DQNAgent):
         losses = tf.losses.huber_loss(
             target_nograd, q_value_chosen, reduction=tf.losses.Reduction.NONE)
         loss = tf.reduce_mean(losses)
+        grads_and_vars = self._optimizer.compute_gradients(
+            loss, var_list=self._get_var_list())
+        capped_grads_and_vars = [(tf.clip_by_norm(grad, 1.0), var)
+                                 for grad, var in grads_and_vars]
         if self._summary_writer is not None:
             with tf.variable_scope('losses'):
                 tf.summary.scalar(name='huberloss', tensor=loss)
@@ -478,10 +482,11 @@ class clippedDQN(DQNAgent):
                                   tensor=tf.reduce_max(self.online_net_replay_output))
                 tf.summary.scalar(name='avg_q_value',
                                   tensor=tf.reduce_mean(self.online_net_replay_output))
-        grads_and_vars = self._optimizer.compute_gradients(
-            loss, var_list=self._get_var_list())
-        capped_grads_and_vars = [(tf.clip_by_norm(grad, 10.0), var)
-                                 for grad, var in grads_and_vars]
+            with tf.variable_scope('grads'):
+                for grad, var in grads_and_vars:
+                    tf.summary.histogram(name=f"{var.name}", values=grad)
+                    tf.summary.scalar(name=f"{var.name}",
+                                      tensor=tf.norm(tensor=grad, ord=2))
         return self._optimizer.apply_gradients(capped_grads_and_vars)
 
 

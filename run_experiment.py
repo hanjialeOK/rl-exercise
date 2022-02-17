@@ -18,7 +18,7 @@ def create_agent(sess, num_actions, exp_name=None, summary_writer=None):
         return DQNAgent(
             sess=sess, num_actions=num_actions, summary_writer=summary_writer)
     if exp_name == 'clipdqn':
-        return DQNAgent(
+        return clippedDQN(
             sess=sess, num_actions=num_actions, summary_writer=summary_writer)
     elif exp_name == 'ddqn':
         return DDQNAgent(
