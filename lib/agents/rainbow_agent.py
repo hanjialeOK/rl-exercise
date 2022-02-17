@@ -182,15 +182,26 @@ class C51Agent(DQNAgent):
             labels=target_distribution,
             logits=chosen_action_logits)
         loss = tf.reduce_mean(losses)
+        grads_and_vars = self._optimizer.compute_gradients(
+            loss, var_list=self._get_var_list())
+        capped_grads_and_vars = [(tf.clip_by_norm(grad, 10.0), var)
+                                 for grad, var in grads_and_vars]
         if self._summary_writer is not None:
             with tf.variable_scope('losses'):
-                tf.summary.scalar(name='crossEntropyLoss', tensor=loss)
+                tf.summary.scalar(name='CrossEntropyLoss', tensor=loss)
             with tf.variable_scope('q_estimate'):
                 tf.summary.scalar(name='max_q_value',
                                   tensor=tf.reduce_max(self.online_net_replay_output.q_values))
                 tf.summary.scalar(name='avg_q_value',
                                   tensor=tf.reduce_mean(self.online_net_replay_output.q_values))
-        return self._optimizer.minimize(loss, var_list=self._get_var_list())
+            with tf.variable_scope('rainbow_grads'):
+                for grad, var in grads_and_vars:
+                    tf.summary.histogram(name=f"{var.name}", values=grad)
+            with tf.variable_scope('rainbow_grads_l2norm'):
+                for grad, var in grads_and_vars:
+                    tf.summary.scalar(name=f"{var.name}",
+                                      tensor=tf.norm(tensor=grad, ord=2))
+        return self._optimizer.apply_gradients(capped_grads_and_vars)
 
     def _project_distribution(self, supports, weights, target_support):
         target_support_deltas = target_support[1:] - target_support[:-1]

@@ -478,9 +478,11 @@ class clippedDQN(DQNAgent):
                                   tensor=tf.reduce_max(self.online_net_replay_output))
                 tf.summary.scalar(name='avg_q_value',
                                   tensor=tf.reduce_mean(self.online_net_replay_output))
-            with tf.variable_scope('grads'):
+            with tf.variable_scope('dqn_grads'):
                 for grad, var in grads_and_vars:
                     tf.summary.histogram(name=f"{var.name}", values=grad)
+            with tf.variable_scope('dqn_grads_l2norm'):
+                for grad, var in grads_and_vars:
                     tf.summary.scalar(name=f"{var.name}",
                                       tensor=tf.norm(tensor=grad, ord=2))
         return self._optimizer.apply_gradients(capped_grads_and_vars)
