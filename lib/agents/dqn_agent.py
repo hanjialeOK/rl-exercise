@@ -266,6 +266,12 @@ class DQNAgent():
         self.replay_terminals = tf.cast(
             self._replay.transition['terminals'], tf.float32)
 
+        self.online_net_output = self.online_network(self.state_ph)  # (1, 4)
+        self.online_net_replay_output = self.online_network(
+            self.replay_states)  # (32, 4)
+        self.target_net_replay_output = self.target_network(
+            self.replay_next_states)  # (32, 4)
+
     # Note: Required to be called after _build_train_op(), otherwise return []
     def _get_var_list(self, name='online'):
         scope = tf.get_default_graph().get_name_scope()
@@ -283,11 +289,6 @@ class DQNAgent():
         return target
 
     def _build_train_op(self):
-        self.online_net_output = self.online_network(self.state_ph)  # (1, 4)
-        self.online_net_replay_output = self.online_network(
-            self.replay_states)  # (32, 4)
-        self.target_net_replay_output = self.target_network(
-            self.replay_next_states)  # (32, 4)
         self.q_argmax = tf.argmax(self.online_net_output, axis=1)[0]  # ()
         # Target
         target_nograd = tf.stop_gradient(self._build_target_q_op())
@@ -452,11 +453,6 @@ class clippedDQN(DQNAgent):
             summary_writing_frequency=summary_writing_frequency)
 
     def _build_train_op(self):
-        self.online_net_output = self.online_network(self.state_ph)  # (1, 4)
-        self.online_net_replay_output = self.online_network(
-            self.replay_states)  # (32, 4)
-        self.target_net_replay_output = self.target_network(
-            self.replay_next_states)  # (32, 4)
         self.q_argmax = tf.argmax(self.online_net_output, axis=1)[0]  # ()
         # Target
         target_nograd = tf.stop_gradient(self._build_target_q_op())
@@ -599,11 +595,6 @@ class PERAgent(DDQNAgent):
         self.replay_probs = tf.cast(
             self._replay.transition['priorities'], tf.float32)
 
-        self.online_net_output = self.online_network(self.state_ph)  # (1, 4)
-        self.online_net_replay_output = self.online_network(
-            self.replay_states)  # (32, 4)
-        self.target_net_replay_output = self.target_network(
-            self.replay_next_states)  # (32, 4)
         self.q_argmax = tf.argmax(self.online_net_output, axis=1)[0]  # ()
 
         # Target

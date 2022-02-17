@@ -164,11 +164,6 @@ class C51Agent(DQNAgent):
         return self._project_distribution(target_support, next_probabilities, self._support)
 
     def _build_train_op(self):
-        self.online_net_output = self.online_network(self.state_ph)  # (1, 4)
-        self.online_net_replay_output = self.online_network(
-            self.replay_states)  # (32, 4)
-        self.target_net_replay_output = self.target_network(
-            self.replay_next_states)  # (32, 4)
         self.q_argmax = tf.argmax(
             self.online_net_output.q_values, axis=1)[0]  # ()
 
