@@ -20,3 +20,14 @@ def json_serializable(x):
     for key in black_list:
         x.pop(key)
     return x
+
+
+def set_global_seeds(i):
+    myseed = int(i) % 1000
+    try:
+        import tensorflow as tf
+        tf.set_random_seed(myseed)
+    except ImportError:
+        pass
+    np.random.seed(myseed)
+    random.seed(myseed)

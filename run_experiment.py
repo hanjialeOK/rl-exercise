@@ -6,7 +6,7 @@ import json
 from argparse import ArgumentParser
 from collections import namedtuple
 
-from lib.utils.json_tools import json_serializable
+from lib.utils.json_tools import json_serializable, set_global_seeds
 from lib.agents.dqn_agent import *
 from lib.agents.rainbow_agent import *
 from lib.env.atari_lib import create_atari_environment
@@ -417,6 +417,8 @@ def main(args):
     if not os.path.exists(base_dir):
         os.makedirs(base_dir)
     config = json_serializable(locals())
+    # Set global seed
+    set_global_seeds(time.time())
     # Runner
     runner = StepAwareRunner(
         base_dir=base_dir, exp_name=exp_name, env_name=env_name)
