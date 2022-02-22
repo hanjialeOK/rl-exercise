@@ -412,7 +412,7 @@ class DQNAgent():
             self._record_observation(observation)
 
 
-class clippedDQN(DQNAgent):
+class ClippedDQN(DQNAgent):
     def __init__(self,
                  sess,
                  num_actions,
@@ -434,7 +434,7 @@ class clippedDQN(DQNAgent):
                      centered=False),
                  summary_writer=None,
                  summary_writing_frequency=500):
-        super(clippedDQN, self).__init__(
+        super(ClippedDQN, self).__init__(
             sess=sess,
             num_actions=num_actions,
             replay_capacity=replay_capacity,
