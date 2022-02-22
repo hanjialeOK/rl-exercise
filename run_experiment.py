@@ -9,7 +9,7 @@ from collections import namedtuple
 from lib.utils.json_tools import json_serializable, set_global_seeds
 from lib.agents.dqn_agent import *
 from lib.agents.rainbow_agent import *
-from lib.env.atari_lib import create_atari_environment
+from lib.env.atari_wrappers import create_atari_environment
 
 
 def create_agent(sess, num_actions, exp_name=None, summary_writer=None):
@@ -18,7 +18,7 @@ def create_agent(sess, num_actions, exp_name=None, summary_writer=None):
         return DQNAgent(
             sess=sess, num_actions=num_actions, summary_writer=summary_writer)
     if exp_name == 'clipdqn':
-        return clippedDQN(
+        return ClippedDQN(
             sess=sess, num_actions=num_actions, summary_writer=summary_writer)
     elif exp_name == 'ddqn':
         return DDQNAgent(
@@ -98,7 +98,7 @@ class Runner():
         episode_length = 0
         episode_reward = 0.
 
-        observation = self._env.new_random_game()
+        observation = self._env.reset()
         self._agent.begin_episode(observation)
         while True:
             print(
@@ -112,7 +112,7 @@ class Runner():
 
             reward_clip = np.clip(reward, -1, 1)
 
-            if self._env.game_over or (episode_length >= self._max_steps_per_episode):
+            if self._env.was_real_done or (episode_length >= self._max_steps_per_episode):
                 # we lose all lifes
                 self._agent.step(action, observation, reward_clip, True)
                 break
@@ -120,6 +120,7 @@ class Runner():
                 # If we lose a life but the episode is not over
                 # Terminal on life loss = True
                 self._agent.step(action, observation, reward_clip, True)
+                observation = self._env.reset()
                 self._agent.begin_episode(observation)
             else:
                 self._agent.step(action, observation, reward_clip, False)
@@ -175,7 +176,7 @@ class Runner():
     # Save 4 best models according to eval_data.average_reward.
     def _checkpoint_experiment(self, eval_data):
         if eval_data.average_reward >= self._max_episode_reward:
-            print(f'Saving weights into {self._checkpoint_dir}')
+            print(f'\nSaving weights into {self._checkpoint_dir}')
             self._agent.bundle(self._checkpoint_dir, self._iteration)
             self._max_episode_reward = eval_data.average_reward
 
@@ -243,7 +244,7 @@ class StepAwareRunner():
         self._summary_writer.add_graph(graph=tf.get_default_graph())
         self._sess.run(tf.global_variables_initializer())
 
-        self.config['env_config'] = self._env.config
+        # self.config['env_config'] = self._env.config
         self.config['agent_config'] = self._agent.config
 
         self._iteration = 0
@@ -265,7 +266,7 @@ class StepAwareRunner():
         episode_length = 0
         episode_reward = 0.
 
-        observation = self._env.new_random_game()
+        observation = self._env.reset()
         self._agent.begin_episode(observation)
         while True:
             print(
@@ -279,14 +280,12 @@ class StepAwareRunner():
 
             reward_clip = np.clip(reward, -1, 1)
 
-            if self._env.game_over or (episode_length >= self._max_steps_per_episode):
-                # we lose all lifes
-                self._agent.step(action, observation, reward_clip, True)
+            if self._env.was_real_done or (episode_length >= self._max_steps_per_episode):
                 break
             elif terminal:
                 # If we lose a life but the episode is not over
                 # Terminal on life loss = True
-                self._agent.step(action, observation, reward_clip, True)
+                observation = self._env.reset()
                 self._agent.begin_episode(observation)
             else:
                 self._agent.step(action, observation, reward_clip, False)
@@ -319,7 +318,7 @@ class StepAwareRunner():
         train_num_episodes = 0
         start_time = time.time()
 
-        observation = self._env.new_random_game()
+        observation = self._env.reset()
         self._agent.begin_episode(observation)
         for step in range(1, self._total_steps + 1):
             print(
@@ -333,7 +332,7 @@ class StepAwareRunner():
 
             reward_clip = np.clip(reward, -1, 1)
 
-            if self._env.game_over or (episode_length >= self._max_steps_per_episode):
+            if self._env.was_real_done or (episode_length >= self._max_steps_per_episode):
                 # Lose all lives
                 self._agent.step(action, observation, reward_clip, True)
                 # Summary
@@ -355,12 +354,13 @@ class StepAwareRunner():
                 # Episode restart
                 episode_length = 0
                 episode_reward = 0.
-                observation = self._env.new_random_game()
+                observation = self._env.reset()
                 self._agent.begin_episode(observation)
             elif terminal:
                 # If we lose a life but the episode is not over
                 # Terminal on life loss = True
                 self._agent.step(action, observation, reward_clip, True)
+                observation = self._env.reset()
                 self._agent.begin_episode(observation)
             else:
                 self._agent.step(action, observation, reward_clip, False)
@@ -390,7 +390,7 @@ class StepAwareRunner():
                 self._summary_writer.add_summary(summary, step)
                 # Save the best weights
                 if eval_average_reward >= self._max_episode_reward:
-                    print(f'Saving weights into {self._checkpoint_dir}')
+                    print(f'\nSaving weights into {self._checkpoint_dir}')
                     self._agent.bundle(self._checkpoint_dir, self._iteration)
                     self._max_episode_reward = eval_average_reward
                 # Log data
