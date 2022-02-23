@@ -293,11 +293,12 @@ class DQNAgent():
         # Target
         target_nograd = tf.stop_gradient(self._build_target_q_op())
         # Online
-        q_value_chosen_2d = tf.gather(self.online_net_replay_output,
-                                      tf.expand_dims(
-                                          self.replay_actions, axis=-1),
-                                      axis=1, batch_dims=1)  # (32, 1)
-        q_value_chosen = tf.squeeze(q_value_chosen_2d)  # (32,)
+        # It seems that one_hot is better than gather.
+        # https://github.com/dennybritz/reinforcement-learning/issues/30
+        replay_actions_one_hot = tf.one_hot(
+            self.replay_actions, self._num_actions, 1., 0., axis=-1)  # (32, 4)
+        q_value_chosen = tf.reduce_sum(
+            self.online_net_replay_output * replay_actions_one_hot, axis=1)  # (32,)
 
         losses = tf.losses.huber_loss(
             target_nograd, q_value_chosen, reduction=tf.losses.Reduction.NONE)
@@ -457,11 +458,10 @@ class ClippedDQN(DQNAgent):
         # Target
         target_nograd = tf.stop_gradient(self._build_target_q_op())
         # Online
-        q_value_chosen_2d = tf.gather(self.online_net_replay_output,
-                                      tf.expand_dims(
-                                          self.replay_actions, axis=-1),
-                                      axis=1, batch_dims=1)  # (32, 1)
-        q_value_chosen = tf.squeeze(q_value_chosen_2d)  # (32,)
+        replay_actions_one_hot = tf.one_hot(
+            self.replay_actions, self._num_actions, 1., 0., axis=-1)  # (32, 4)
+        q_value_chosen = tf.reduce_sum(
+            self.online_net_replay_output * replay_actions_one_hot, axis=1)  # (32,)
 
         losses = tf.losses.huber_loss(
             target_nograd, q_value_chosen, reduction=tf.losses.Reduction.NONE)
@@ -530,11 +530,10 @@ class DDQNAgent(DQNAgent):
 
     def _build_target_q_op(self):
         online_next_q = self.online_network(self.replay_next_states)  # (32, 4)
-        next_q_2d = tf.gather(self.target_net_replay_output,
-                              tf.expand_dims(
-                                  tf.argmax(online_next_q, axis=1), axis=-1),
-                              axis=1, batch_dims=1)  # (32, 1)
-        next_q = tf.squeeze(next_q_2d)  # (32, )
+        replay_actions_one_hot = tf.one_hot(
+            tf.argmax(online_next_q, axis=1), self._num_actions, 1., 0., axis=-1)  # (32, 4)
+        next_q = tf.reduce_sum(
+            self.target_net_replay_output * replay_actions_one_hot, axis=1)  # (32,)
         target = self.replay_rewards + self._gamma * \
             (1 - self.replay_terminals) * next_q  # (32,)
         return target
@@ -603,11 +602,10 @@ class PERAgent(DDQNAgent):
         target_nograd = tf.stop_gradient(self._build_target_q_op())
 
         # Online
-        q_value_chosen_2d = tf.gather(self.online_net_replay_output,
-                                      tf.expand_dims(
-                                          self.replay_actions, axis=-1),
-                                      axis=1, batch_dims=1)  # (32, 1)
-        q_value_chosen = tf.squeeze(q_value_chosen_2d)  # (32,)
+        replay_actions_one_hot = tf.one_hot(
+            self.replay_actions, self._num_actions, 1., 0., axis=-1)  # (32, 4)
+        q_value_chosen = tf.reduce_sum(
+            self.online_net_replay_output * replay_actions_one_hot, axis=1)  # (32,)
 
         losses = tf.losses.huber_loss(
             target_nograd, q_value_chosen, reduction=tf.losses.Reduction.NONE)
