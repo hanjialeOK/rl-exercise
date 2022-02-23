@@ -278,17 +278,16 @@ class StepAwareRunner():
             episode_reward += reward
             episode_length += 1
 
-            reward_clip = np.clip(reward, -1, 1)
+            # reward_clip = np.clip(reward, -1, 1)
 
-            if self._env.was_real_done or (episode_length >= self._max_steps_per_episode):
+            if terminal or (episode_length >= self._max_steps_per_episode):
                 break
-            elif terminal:
+            elif self._env.was_life_loss:
                 # If we lose a life but the episode is not over
-                # Terminal on life loss = True
                 observation = self._env.reset()
                 self._agent.begin_episode(observation)
             else:
-                self._agent.step(action, observation, reward_clip, False)
+                self._agent.step(action, observation, reward, False)
         return episode_length, episode_reward
 
     def _evaluate(self, min_steps):
@@ -332,7 +331,7 @@ class StepAwareRunner():
 
             reward_clip = np.clip(reward, -1, 1)
 
-            if self._env.was_real_done or (episode_length >= self._max_steps_per_episode):
+            if terminal or (episode_length >= self._max_steps_per_episode):
                 # Lose all lives
                 self._agent.step(action, observation, reward_clip, True)
                 # Summary
@@ -356,9 +355,8 @@ class StepAwareRunner():
                 episode_reward = 0.
                 observation = self._env.reset()
                 self._agent.begin_episode(observation)
-            elif terminal:
+            elif self._env.was_life_loss:
                 # If we lose a life but the episode is not over
-                # Terminal on life loss = True
                 self._agent.step(action, observation, reward_clip, True)
                 observation = self._env.reset()
                 self._agent.begin_episode(observation)
