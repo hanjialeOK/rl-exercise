@@ -217,7 +217,7 @@ class DQNAgent():
                  eval_mode=False,
                  max_tf_checkpoints_to_keep=4,
                  optimizer=WrappedAdamOptimizer(
-                     learning_rate=0.00025,
+                     learning_rate=0.00025/4,
                      epsilon=0.0003125),
                  summary_writer=None,
                  summary_writing_frequency=500):
