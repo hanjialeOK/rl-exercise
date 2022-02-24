@@ -85,21 +85,28 @@ class NatureDQNNetwork(tf.keras.Model):
         self._num_actions = num_actions
         # Defining layers.
         activation_fn = tf.keras.activations.relu
+        kernel_initializer = tf.keras.initializers.VarianceScaling(
+            scale=1.0 / np.sqrt(3.0), mode='fan_in', distribution='uniform')
         # Setting names of the layers manually to make variable names more similar
         # with tf.slim variable names/checkpoints.
-        self.conv1 = tf.keras.layers.Conv2D(32, [8, 8], strides=4, padding='same',
-                                            data_format='channels_first',
-                                            activation=activation_fn, name='conv1')
-        self.conv2 = tf.keras.layers.Conv2D(64, [4, 4], strides=2, padding='same',
-                                            data_format='channels_first',
-                                            activation=activation_fn, name='conv2')
-        self.conv3 = tf.keras.layers.Conv2D(64, [3, 3], strides=1, padding='same',
-                                            data_format='channels_first',
-                                            activation=activation_fn, name='conv3')
+        self.conv1 = tf.keras.layers.Conv2D(
+            32, [8, 8], strides=4, padding='same',
+            data_format='channels_first', activation=activation_fn,
+            kernel_initializer=kernel_initializer, name='conv1')
+        self.conv2 = tf.keras.layers.Conv2D(
+            64, [4, 4], strides=2, padding='same',
+            data_format='channels_first', activation=activation_fn,
+            kernel_initializer=kernel_initializer, name='conv2')
+        self.conv3 = tf.keras.layers.Conv2D(
+            64, [3, 3], strides=1, padding='same',
+            data_format='channels_first', activation=activation_fn,
+            kernel_initializer=kernel_initializer, name='conv3')
         self.flatten = tf.keras.layers.Flatten()
-        self.dense1 = tf.keras.layers.Dense(512, activation=activation_fn,
-                                            name='fc1')
-        self.dense2 = tf.keras.layers.Dense(self._num_actions, name='fc2')
+        self.dense1 = tf.keras.layers.Dense(
+            512, activation=activation_fn,
+            kernel_initializer=kernel_initializer, name='fc1')
+        self.dense2 = tf.keras.layers.Dense(
+            self._num_actions, kernel_initializer=kernel_initializer, name='fc2')
 
     def call(self, state):
         """Creates the output tensor/op given the state tensor as input.
@@ -139,24 +146,33 @@ class DuelingNetwork(tf.keras.Model):
         self._num_actions = num_actions
         # Defining layers.
         activation_fn = tf.keras.activations.relu
+        kernel_initializer = tf.keras.initializers.VarianceScaling(
+            scale=1.0 / np.sqrt(3.0), mode='fan_in', distribution='uniform')
         # Setting names of the layers manually to make variable names more similar
         # with tf.slim variable names/checkpoints.
-        self.conv1 = tf.keras.layers.Conv2D(32, [8, 8], strides=4, padding='same',
-                                            data_format='channels_first',
-                                            activation=activation_fn, name='conv1')
-        self.conv2 = tf.keras.layers.Conv2D(64, [4, 4], strides=2, padding='same',
-                                            data_format='channels_first',
-                                            activation=activation_fn, name='conv2')
-        self.conv3 = tf.keras.layers.Conv2D(64, [3, 3], strides=1, padding='same',
-                                            data_format='channels_first',
-                                            activation=activation_fn, name='conv3')
+        self.conv1 = tf.keras.layers.Conv2D(
+            32, [8, 8], strides=4, padding='same',
+            data_format='channels_first', activation=activation_fn,
+            kernel_initializer=kernel_initializer, name='conv1')
+        self.conv2 = tf.keras.layers.Conv2D(
+            64, [4, 4], strides=2, padding='same',
+            data_format='channels_first', activation=activation_fn,
+            kernel_initializer=kernel_initializer, name='conv2')
+        self.conv3 = tf.keras.layers.Conv2D(
+            64, [3, 3], strides=1, padding='same',
+            data_format='channels_first', activation=activation_fn,
+            kernel_initializer=kernel_initializer, name='conv3')
         self.flatten = tf.keras.layers.Flatten()
-        self.dense1 = tf.keras.layers.Dense(512, activation=activation_fn,
-                                            name='fc1')
-        self.dense2 = tf.keras.layers.Dense(self._num_actions, name='fc2')
-        self.dense3 = tf.keras.layers.Dense(512, activation=activation_fn,
-                                            name='fc3')
-        self.dense4 = tf.keras.layers.Dense(1, name='fc4')
+        self.dense1 = tf.keras.layers.Dense(
+            512, activation=activation_fn,
+            kernel_initializer=kernel_initializer, name='fc1')
+        self.dense2 = tf.keras.layers.Dense(
+            self._num_actions, kernel_initializer=kernel_initializer, name='fc2')
+        self.dense3 = tf.keras.layers.Dense(
+            512, activation=activation_fn,
+            kernel_initializer=kernel_initializer, name='fc3')
+        self.dense4 = tf.keras.layers.Dense(
+            1, kernel_initializer=kernel_initializer, name='fc4')
 
     def call(self, state):
         """Creates the output tensor/op given the state tensor as input.
@@ -200,11 +216,9 @@ class DQNAgent():
                  batch_size=32,
                  eval_mode=False,
                  max_tf_checkpoints_to_keep=4,
-                 optimizer=WrappedRMSPropOptimizer(
+                 optimizer=WrappedAdamOptimizer(
                      learning_rate=0.00025,
-                     decay=0.95,
-                     epsilon=1e-6,
-                     centered=False),
+                     epsilon=0.0003125),
                  summary_writer=None,
                  summary_writing_frequency=500):
         self.config = json_serializable(locals())
@@ -555,7 +569,7 @@ class PERAgent(DDQNAgent):
                  eval_mode=False,
                  max_tf_checkpoints_to_keep=4,
                  optimizer=WrappedAdamOptimizer(
-                     learning_rate=0.00025,
+                     learning_rate=0.00025/4,
                      epsilon=0.0003125),
                  summary_writer=None,
                  summary_writing_frequency=500,
