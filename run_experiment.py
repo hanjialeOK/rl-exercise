@@ -9,7 +9,7 @@ from collections import namedtuple
 from lib.utils.json_tools import json_serializable, set_global_seeds
 from lib.agents.dqn_agent import *
 from lib.agents.rainbow_agent import *
-from lib.env.atari_wrappers import create_atari_environment
+from lib.env.atari_lib import create_atari_environment
 
 
 def create_agent(sess, num_actions, exp_name=None, summary_writer=None):
