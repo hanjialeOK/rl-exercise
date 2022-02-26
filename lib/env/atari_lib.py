@@ -46,7 +46,6 @@ class AtariPreprocessing(object):
         self._width = 84
         self._height = 84
 
-        obs_dims = self._env.observation_space
         # Stores temporary observations used for pooling over two successive
         # frames.
         obs_dims = env.observation_space.shape
