@@ -5,7 +5,7 @@ import time
 import os
 import json
 
-from lib.utils.json_tools import convert_json
+from lib.utils.json_tools import convert_json, save_config
 
 EPS = 1e-8
 
@@ -414,15 +414,24 @@ def main(args):
     base_dir = os.path.join(args.disk_dir, f"my_results/{env_name}/{dir_name}")
     if not os.path.exists(base_dir):
         os.makedirs(base_dir)
-    config = convert_json(locals())
-    # Save config_json
-    config_json = json.dumps(config, sort_keys=False,
-                             indent=4, separators=(',', ': '))
-    with open(os.path.join(base_dir, "config.json"), 'w') as out:
-        out.write(config_json)
+    save_config(convert_json(locals()), base_dir)
     # Run
     allow_eval = not args.noneval
-    ppo(base_dir=base_dir, env_name=env_name, allow_eval=allow_eval)
+    ppo(base_dir=base_dir,
+        env_name=env_name,
+        total_steps=int(1e6),
+        horizon=1000,
+        gamma=0.99,
+        lam=0.95,
+        clip_ratio=0.2,
+        pi_lr=3e-4,
+        vf_lr=1e-3,
+        train_pi_iters=80,
+        train_v_iters=80,
+        target_kl=0.01,
+        max_ep_len=10000,
+        eval_freq=10,
+        allow_eval=allow_eval)
 
 
 if __name__ == '__main__':
