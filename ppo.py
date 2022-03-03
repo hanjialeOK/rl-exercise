@@ -404,7 +404,20 @@ def ppo(base_dir, env_name, total_steps=int(1e6), horizon=1000,
     env_eval.close()
 
 
-def main(args):
+if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--dir_name', type=str, default=None, help='Dir name')
+    parser.add_argument('--disk_dir', type=str,
+                        default='/data/hanjl', help='Data disk dir')
+    parser.add_argument('--env_name', type=str, default='HalfCheetah-v2')
+    parser.add_argument('--steps', type=int, default=1000)
+    parser.add_argument('--exp_name', type=str, default='ppo')
+    parser.add_argument('--noneval', action='store_true', help='No eval')
+    args = parser.parse_args()
+
+    main(args)
+
     if not os.path.exists(args.disk_dir):
         raise
     timestamp = time.strftime("%Y-%m-%d-%H_%M_%S", time.localtime(time.time()))
@@ -432,18 +445,3 @@ def main(args):
         max_ep_len=10000,
         eval_freq=10,
         allow_eval=allow_eval)
-
-
-if __name__ == '__main__':
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--dir_name', type=str, default=None, help='Dir name')
-    parser.add_argument('--disk_dir', type=str,
-                        default='/data/hanjl', help='Data disk dir')
-    parser.add_argument('--env_name', type=str, default='HalfCheetah-v2')
-    parser.add_argument('--steps', type=int, default=1000)
-    parser.add_argument('--exp_name', type=str, default='ppo')
-    parser.add_argument('--noneval', action='store_true', help='No eval')
-    args = parser.parse_args()
-
-    main(args)
