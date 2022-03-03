@@ -289,7 +289,7 @@ def evaluate(env_eval, agent, eval_ep_n=10, max_ep_len=10000):
     return avg_eval_ret, avg_eval_len
 
 
-def ppo(base_dir, env_name, total_steps=int(1e6), horizon=2048,
+def ppo(base_dir, env_name, total_steps=int(1e6), horizon=1000,
         gamma=0.99, lam=0.95, clip_ratio=0.2, pi_lr=3e-4,
         vf_lr=1e-3, train_pi_iters=80, train_v_iters=80, target_kl=0.01,
         max_ep_len=10000, eval_freq=10, allow_eval=True):
