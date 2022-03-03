@@ -271,9 +271,9 @@ class TRPOAgent():
                 pi_params_flatted, set_pi_params,
                 hvp, pi_loss, v, train_vf]
 
-    def update(self, buf):
+    def update(self, buf_data):
         # Prepare hessian func, gradient eval
-        inputs = {k: v for k, v in zip(self.all_phs, buf.get())}
+        inputs = {k: v for k, v in zip(self.all_phs, buf_data)}
 
         def Hx(x): return self.sess.run(
             self.hvp, feed_dict={**inputs, self.x_ph: x})
@@ -344,10 +344,36 @@ class TRPOAgent():
                 os.path.join(checkpoint_dir, f'tf_ckpt-{iteration}'))
 
 
-def trpo(base_dir, env_name, total_steps=int(1e6), train_steps=1000,
+def evaluate(env_eval, agent, eval_ep_n=10, max_ep_len=10000):
+    ret_sum = 0.
+    len_sum = 0
+
+    for i in range(1, eval_ep_n + 1):
+        obs = env_eval.reset()
+        ep_ret = 0.
+        ep_len = 0
+        while True:
+            pi = agent.select_action(obs)[0]
+            ac = pi[0]
+            obs, reward, done, _ = env_eval.step(ac)
+            ep_ret += reward
+            ep_len += 1
+            if done or ep_len >= max_ep_len:
+                print(f'\reval: {i}/{eval_ep_n}', end='')
+                ret_sum += ep_ret
+                len_sum += ep_len
+                break
+    avg_eval_ret = ret_sum / eval_ep_n
+    avg_eval_len = len_sum / eval_ep_n
+    print(f'\navg_eval_len: {ep_len}, avg_eval_ret: {ep_ret: .1f}')
+    return avg_eval_ret, avg_eval_len
+
+
+def trpo(base_dir, env_name, total_steps=int(1e6), horizon=1000,
          gamma=0.99, max_kl=0.01, vf_lr=1e-3,
          train_v_iters=80, damping_coeff=0.1, cg_iters=10, backtrack_iters=10,
-         backtrack_coeff=0.8, lam=0.97, max_ep_len=10000, eval_freq=5000):
+         backtrack_coeff=0.8, lam=0.97, max_ep_len=10000, eval_freq=5000,
+         allow_eval=True):
 
     # Create dir
     summary_dir = os.path.join(base_dir, "tf1_summary")
@@ -369,11 +395,13 @@ def trpo(base_dir, env_name, total_steps=int(1e6), train_steps=1000,
 
     env = gym.make(env_name)
     env.seed(seed)
+    env_eval = gym.make(env_name)
+    env_eval.seed(seed)
     obs_dim = env.observation_space.shape
     act_dim = env.action_space.shape
 
     # Experience buffer
-    buf = GAEBuffer(obs_dim, act_dim, train_steps, gamma, lam)
+    buf = GAEBuffer(obs_dim, act_dim, horizon, gamma, lam)
 
     gpu_options = tf.compat.v1.GPUOptions(allow_growth=True)
     sess = tf.compat.v1.Session(
@@ -389,52 +417,75 @@ def trpo(base_dir, env_name, total_steps=int(1e6), train_steps=1000,
     ep_ret, ep_len = 0, 0
     ep_count = 0
     total_steps = int(1e6)
-    train_steps = 1000
+    horizon = 1000
     max_ep_ret = 0
 
-    for t in range(1, total_steps + 1):
-        [pi, v_t, logp_pi_t, logits_t, logstd_t] = agent.select_action(obs)
-        ac = pi[0]
+    epochs = total_steps // horizon
+    for epoch in range(1, epochs + 1):
+        for t in range(1, horizon + 1):
+            [pi, v_t, logp_pi_t, logits_t, logstd_t] = agent.select_action(obs)
+            ac = pi[0]
 
-        next_obs, reward, done, _ = env.step(ac)
-        ep_ret += reward
-        ep_len += 1
+            next_obs, reward, done, _ = env.step(ac)
+            ep_ret += reward
+            ep_len += 1
 
-        buf.store(obs, ac, reward, done, v_t,
-                  logp_pi_t, logits_t, logstd_t)
+            buf.store(obs, ac, reward, done, v_t,
+                      logp_pi_t, logits_t, logstd_t)
 
-        obs = next_obs
+            obs = next_obs
 
-        if done or (ep_len >= max_ep_len):
-            # Episode summary
-            episode_summary = tf.compat.v1.Summary(value=[
-                tf.compat.v1.Summary.Value(simple_value=ep_ret,
-                                           tag="episode_info/reward"),
-                tf.compat.v1.Summary.Value(simple_value=ep_len,
-                                           tag="episode_info/length")
-            ])
-            summary_writer.add_summary(episode_summary, ep_count)
-            print(f'ep_len: {ep_len}, ep_ret: {ep_ret:.1f}, '
-                  f'step: {t/total_steps:.1%}')
-            # Episode restart
-            obs = env.reset()
-            ep_ret, ep_len = 0, 0
-            ep_count += 1
+            if done or (ep_len >= max_ep_len):
+                # Episode summary
+                episode_summary = tf.compat.v1.Summary(value=[
+                    tf.compat.v1.Summary.Value(
+                        tag="episode_info/reward", simple_value=ep_ret),
+                    tf.compat.v1.Summary.Value(
+                        tag="episode_info/length", simple_value=ep_len)
+                ])
+                summary_writer.add_summary(episode_summary, ep_count)
+                print(f'Epoch: {epoch}/{epochs}, '
+                      f'ep_len: {ep_len}, ep_ret: {ep_ret:.1f}, '
+                      f'train: {epoch/epochs:.1%}')
+                # Episode restart
+                obs = env.reset()
+                ep_ret, ep_len = 0, 0
+                ep_count += 1
 
-        if t % train_steps == 0:
-            if not done:
-                print(
-                    f'Warning: trajectory cut off by epoch at {ep_len} steps.')
-            # if trajectory didn't reach terminal state, bootstrap value target
-            last_val = 0.0 if done else agent.compute_v(obs)
-            buf.finish_path(last_val)
+            if t == horizon:
+                # if trajectory didn't reach terminal state, bootstrap value target
+                last_val = 0.0 if done else agent.compute_v(obs)
+                buf.finish_path(last_val)
+                break
 
-            agent.update(buf)
+        buf_data = buf.get()
+        agent.update(buf_data)
 
-        # Save model
-        if t % eval_freq == 0:
-            pass
+        # Evaluate
+        step = epoch * horizon
+        if epoch % eval_freq == 0 and allow_eval:
+            avg_ret, evg_len = evaluate(
+                env_eval, agent, eval_ep_n=10, max_ep_len=max_ep_len)
             # Summary
+            eval_summary = tf.compat.v1.Summary(value=[
+                tf.compat.v1.Summary.Value(
+                    tag='eval/avg_len', simple_value=evg_len),
+                tf.compat.v1.Summary.Value(
+                    tag='eval/avg_reward', simple_value=avg_ret)
+            ])
+            summary_writer.add_summary(eval_summary, step)
+            # Save the best weights
+            if avg_ret >= max_ep_ret:
+                print(f'Saving weights into {checkpoint_dir}')
+                agent.bundle(checkpoint_dir, epoch)
+                max_ep_ret = avg_ret
+            # Log data
+            with open(progress_txt, 'a') as f:
+                f.write(f"{step}\t{avg_ret}\n")
+    print(f"Results saved into {base_dir}")
+    summary_writer.flush()
+    env.close()
+    env_eval.close()
 
 
 def main(args):
@@ -454,7 +505,8 @@ def main(args):
     with open(os.path.join(base_dir, "config.json"), 'w') as out:
         out.write(config_json)
     # Run
-    trpo(base_dir=base_dir, env_name=env_name)
+    allow_eval = not args.noneval
+    trpo(base_dir=base_dir, env_name=env_name, allow_eval=allow_eval)
 
 
 if __name__ == '__main__':
@@ -467,6 +519,7 @@ if __name__ == '__main__':
     parser.add_argument('--steps', type=int, default=1000)
     parser.add_argument('--epochs', type=int, default=1000)
     parser.add_argument('--exp_name', type=str, default='trpo')
+    parser.add_argument('--noneval', action='store_true', help='No eval')
     args = parser.parse_args()
 
     main(args)
