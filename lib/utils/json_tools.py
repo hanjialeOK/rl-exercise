@@ -3,7 +3,7 @@ import random
 import json
 
 
-def is_jsonable(x):
+def is_convert_json(x):
     try:
         json.dumps(x)
         return True
@@ -11,23 +11,12 @@ def is_jsonable(x):
         return False
 
 
-def json_serializable(x):
+def convert_json(x):
     assert isinstance(x, dict)
     black_list = []
     for key in x.keys():
-        if not is_jsonable(x[key]):
+        if not is_convert_json(x[key]):
             black_list.append(key)
     for key in black_list:
         x.pop(key)
     return x
-
-
-def set_global_seeds(i):
-    myseed = int(i) % 1000
-    try:
-        import tensorflow as tf
-        tf.set_random_seed(myseed)
-    except ImportError:
-        pass
-    np.random.seed(myseed)
-    random.seed(myseed)

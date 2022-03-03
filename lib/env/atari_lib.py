@@ -3,7 +3,7 @@ import random
 import cv2
 import gym
 
-from lib.utils.json_tools import json_serializable
+from lib.utils.json_tools import convert_json
 
 
 def create_atari_environment(game_name=None):
@@ -33,7 +33,7 @@ class AtariPreprocessing(object):
     """
 
     def __init__(self, env, frame_skip=4, punish_on_loss=True, noop_max=30):
-        self.config = json_serializable(locals())
+        self.config = convert_json(locals())
 
         assert env.get_action_meanings()[0] == 'NOOP'
         assert env.get_action_meanings()[1] == 'FIRE'

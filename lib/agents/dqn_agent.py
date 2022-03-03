@@ -3,7 +3,7 @@ import os
 import random
 import tensorflow as tf
 
-from lib.utils.json_tools import json_serializable
+from lib.utils.json_tools import convert_json
 from lib.replay.circular_replay_buffer import WrappedReplayBuffer
 from lib.replay.prioritized_replay_buffer import WrappedProportionalReplayBuffer
 
@@ -42,7 +42,7 @@ class WrappedRMSPropOptimizer(tf.train.RMSPropOptimizer):
                  epsilon=1e-10,
                  centered=False,
                  name="RMSProp"):
-        self.config = json_serializable(locals())
+        self.config = convert_json(locals())
         super(WrappedRMSPropOptimizer, self).__init__(
             learning_rate=learning_rate,
             decay=decay,
@@ -60,7 +60,7 @@ class WrappedAdamOptimizer(tf.train.AdamOptimizer):
                  learning_rate=0.001,
                  epsilon=1e-08,
                  name='Adam'):
-        self.config = json_serializable(locals())
+        self.config = convert_json(locals())
         super(WrappedAdamOptimizer, self).__init__(
             learning_rate=learning_rate,
             epsilon=epsilon,
@@ -221,7 +221,7 @@ class DQNAgent():
                      epsilon=0.0003125),
                  summary_writer=None,
                  summary_writing_frequency=500):
-        self.config = json_serializable(locals())
+        self.config = convert_json(locals())
         self.config['agent_type'] = self.__class__.__name__
         self.config['optimizer'] = optimizer.get_config()
         self._sess = sess

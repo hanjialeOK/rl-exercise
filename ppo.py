@@ -5,7 +5,7 @@ import time
 import os
 import json
 
-from lib.utils.json_tools import json_serializable
+from lib.utils.json_tools import convert_json
 
 EPS = 1e-8
 
@@ -414,7 +414,7 @@ def main(args):
     base_dir = os.path.join(args.disk_dir, f"my_results/{env_name}/{dir_name}")
     if not os.path.exists(base_dir):
         os.makedirs(base_dir)
-    config = json_serializable(locals())
+    config = convert_json(locals())
     # Save config_json
     config_json = json.dumps(config, sort_keys=False,
                              indent=4, separators=(',', ': '))

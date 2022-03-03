@@ -6,7 +6,7 @@ import json
 from argparse import ArgumentParser
 from collections import namedtuple
 
-from lib.utils.json_tools import json_serializable, set_global_seeds
+from lib.utils.json_tools import convert_json
 from lib.agents.dqn_agent import *
 from lib.agents.rainbow_agent import *
 from lib.env.atari_lib import create_atari_environment
@@ -50,7 +50,7 @@ class Runner():
                  clip_rewards=True):
         if not os.path.join(base_dir):
             raise
-        self.config = json_serializable(locals())
+        self.config = convert_json(locals())
         self._base_dir = base_dir
         self._num_iterations = num_iterations
         self._min_train_steps = min_train_steps
@@ -218,7 +218,7 @@ class StepAwareRunner():
                  clip_rewards=True):
         if not os.path.join(base_dir):
             raise
-        self.config = json_serializable(locals())
+        self.config = convert_json(locals())
         self._base_dir = base_dir
         self._total_steps = total_steps
         self._num_iterations = num_iterations
@@ -414,9 +414,7 @@ def main(args):
     base_dir = os.path.join(args.disk_dir, f"stepaware/{env_name}/{dir_name}")
     if not os.path.exists(base_dir):
         os.makedirs(base_dir)
-    config = json_serializable(locals())
-    # Set global seed
-    set_global_seeds(time.time())
+    config = convert_json(locals())
     # Runner
     runner = StepAwareRunner(
         base_dir=base_dir, exp_name=exp_name, env_name=env_name)
