@@ -21,7 +21,7 @@ def convert_json(x):
     return x
 
 
-def save_config(x, base_dir):
+def save_json(x, base_dir):
     assert isinstance(x, dict)
     if not os.path.exists(base_dir):
         raise
