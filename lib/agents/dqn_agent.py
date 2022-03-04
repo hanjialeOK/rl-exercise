@@ -3,7 +3,7 @@ import os
 import random
 import tensorflow as tf
 
-from lib.utils.json_tools import convert_json
+from utils.serialization_utils import convert_json
 from lib.replay.circular_replay_buffer import WrappedReplayBuffer
 from lib.replay.prioritized_replay_buffer import WrappedProportionalReplayBuffer
 

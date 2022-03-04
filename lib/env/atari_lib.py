@@ -3,7 +3,7 @@ import random
 import cv2
 import gym
 
-from lib.utils.json_tools import convert_json
+from utils.serialization_utils import convert_json
 
 
 def create_atari_environment(game_name=None):

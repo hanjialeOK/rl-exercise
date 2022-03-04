@@ -2,11 +2,10 @@ import numpy as np
 import os
 import tensorflow as tf
 import time
-import json
 from argparse import ArgumentParser
 from collections import namedtuple
 
-from lib.utils.json_tools import convert_json
+from utils.serialization_utils import convert_json, save_config
 from lib.agents.dqn_agent import *
 from lib.agents.rainbow_agent import *
 from lib.env.atari_lib import create_atari_environment
@@ -420,10 +419,7 @@ def main(args):
         base_dir=base_dir, exp_name=exp_name, env_name=env_name)
     config['runner_config'] = runner.config
     # Save config_json
-    config_json = json.dumps(config, sort_keys=False,
-                             indent=4, separators=(',', ': '))
-    with open(os.path.join(base_dir, "config.json"), 'w') as out:
-        out.write(config_json)
+    save_config(config, base_dir)
     # Run
     runner.run_experiment()
 
