@@ -3,9 +3,9 @@ import random
 from collections import namedtuple, OrderedDict
 import tensorflow as tf
 
-from lib.replay.circular_replay_buffer import ReplayMemory, ReplayElement, WrappedReplayBuffer
-from lib.replay.sum_tree import SumTree
-from lib.replay.binary_heap import *
+from deepq.replay.circular_replay_buffer import ReplayMemory, ReplayElement, WrappedReplayBuffer
+from deepq.replay.sum_tree import SumTree
+from deepq.replay.binary_heap import *
 
 PERDataType = namedtuple('per_data',
                          ['states', 'actions', 'rewards', 'next_states', 'terminals', 'indices', 'priorities'])

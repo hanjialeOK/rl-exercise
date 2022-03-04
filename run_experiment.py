@@ -6,9 +6,9 @@ from argparse import ArgumentParser
 from collections import namedtuple
 
 from utils.serialization_utils import convert_json, save_config
-from lib.agents.dqn_agent import *
-from lib.agents.rainbow_agent import *
-from lib.env.atari_lib import create_atari_environment
+from deepq.agents.dqn_agent import *
+from deepq.agents.rainbow_agent import *
+from deepq.env.atari_lib import create_atari_environment
 
 
 def create_agent(sess, num_actions, exp_name=None, summary_writer=None):

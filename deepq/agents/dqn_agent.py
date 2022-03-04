@@ -4,8 +4,8 @@ import random
 import tensorflow as tf
 
 from utils.serialization_utils import convert_json
-from lib.replay.circular_replay_buffer import WrappedReplayBuffer
-from lib.replay.prioritized_replay_buffer import WrappedProportionalReplayBuffer
+from deepq.replay.circular_replay_buffer import WrappedReplayBuffer
+from deepq.replay.prioritized_replay_buffer import WrappedProportionalReplayBuffer
 
 
 def linearly_decaying_epsilon(decay_period, step, warmup_steps, epsilon):
