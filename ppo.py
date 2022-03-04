@@ -416,8 +416,6 @@ if __name__ == '__main__':
     parser.add_argument('--noneval', action='store_true', help='No eval')
     args = parser.parse_args()
 
-    main(args)
-
     if not os.path.exists(args.disk_dir):
         raise
     timestamp = time.strftime("%Y-%m-%d-%H_%M_%S", time.localtime(time.time()))
