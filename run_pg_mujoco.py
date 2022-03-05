@@ -4,7 +4,6 @@ import gym
 import time
 import os
 import argparse
-import json
 
 import pg.agents.trpo as TRPO
 import pg.agents.ppo as PPO
@@ -13,7 +12,7 @@ import pg.agents.ppo2 as PPO2
 from termcolor import cprint
 from utils.serialization_utils import convert_json, save_json
 
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 EPS = 1e-8
 
@@ -108,8 +107,18 @@ def main():
     sess = tf.compat.v1.Session(
         config=tf.compat.v1.ConfigProto(
             gpu_options=gpu_options,
-            log_device_placement=False,
-            allow_soft_placement=False))
+            log_device_placement=False))
+
+    # Tensorflow message must be put after sess.
+    # DEBUG(0), INFO(1), WARNING(2), ERROR(3)
+    # Combine os.environ['TF_CPP_MIN_LOG_LEVEL'] and tf.get_logger()
+    tf.get_logger().setLevel('ERROR')
+    gpu_list = tf.config.experimental.list_physical_devices('GPU')
+    cprint(f'Tensorflow version: {tf.__version__}, '
+           f'GPU Available: {tf.test.is_gpu_available()}, '
+           f'GPU count: {len(gpu_list)}\n'
+           f'{gpu_list}\n',
+           color='cyan', attrs=['bold'])
 
     if exp_name == 'TRPO':
         agent = TRPO.TRPOAgent(sess, obs_dim, act_dim, horizon=1000)
