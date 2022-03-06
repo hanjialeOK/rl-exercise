@@ -55,7 +55,7 @@ class CriticMLP(tf.keras.Model):
         x = self.dense1(x)
         x = self.dense2(x)
         x = self.dense3(x)
-        return x
+        return tf.squeeze(x, axis=1)
 
 
 class PPOAgent():
@@ -122,7 +122,7 @@ class PPOAgent():
             logstd + .5 * np.log(2.0 * np.pi * np.e), axis=-1)
 
         # State value
-        v = tf.compat.v1.squeeze(self.critic(obs_ph), axis=1)
+        v = self.critic(obs_ph)
 
         get_action_ops = [pi, v, logp_pi]
 
