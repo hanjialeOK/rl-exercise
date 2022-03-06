@@ -47,9 +47,10 @@ def evaluate(env_eval, agent, num_ep=10, max_ep_len=10000):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--dir_name', type=str, default=None, help='Dir name')
-    parser.add_argument('--disk_dir', type=str, default='/data/hanjl',
+    parser.add_argument('--data_dir', type=str, default='/data/hanjl',
                         help='Data disk dir')
-    parser.add_argument('--env_name', type=str, default='HalfCheetah-v2')
+    parser.add_argument('--env_name', '--env', type=str,
+                        default='HalfCheetah-v2')
     parser.add_argument('--exp_name', type=str, default='PPO',
                         choices=['TRPO', 'PPO', 'PPO2'],
                         help='Experiment name',)
@@ -59,14 +60,14 @@ def main():
                         help='Whether to save model')
     args = parser.parse_args()
 
-    if not os.path.exists(args.disk_dir):
+    if not os.path.exists(args.data_dir):
         raise
 
     timestamp = time.strftime("%Y-%m-%d-%H_%M_%S", time.localtime(time.time()))
     dir_name = args.dir_name or (args.exp_name + '-' + timestamp)
     exp_name = args.exp_name
     env_name = args.env_name
-    base_dir = os.path.join(args.disk_dir, f"my_results/{env_name}/{dir_name}")
+    base_dir = os.path.join(args.data_dir, f"my_results/{env_name}/{dir_name}")
     if not os.path.exists(base_dir):
         os.makedirs(base_dir)
 
@@ -207,6 +208,11 @@ def main():
             # Log data
             with open(progress_txt, 'a') as f:
                 f.write(f"{step}\t{avg_ret}\n")
+
+    time_delta = int(time.time() - start_time)
+    m, s = divmod(time_delta, 60)
+    h, m = divmod(m, 60)
+    print(f'Time taken: {h:d}:{m:02d}:{s:02d}')
     print(f"Results saved into {base_dir}")
     summary_writer.flush()
     env.close()
