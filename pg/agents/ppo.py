@@ -57,7 +57,37 @@ class CriticMLP(tf.keras.Model):
         x = self.dense1(x)
         x = self.dense2(x)
         x = self.dense3(x)
-        return x
+        return tf.squeeze(x, axis=1)
+
+
+def Actor(obs, ac_dim):
+    activation_fn = tf.tanh
+    kernel_initializer = tf.initializers.orthogonal
+    x = tf.compat.v1.layers.dense(
+        obs, units=64, activation=activation_fn,
+        kernel_initializer=kernel_initializer, name='fc1')
+    x = tf.compat.v1.layers.dense(
+        x, units=64, activation=activation_fn,
+        kernel_initializer=kernel_initializer, name='fc2')
+    x = tf.compat.v1.layers.dense(
+        x, units=ac_dim[0], activation=None,
+        kernel_initializer=kernel_initializer, name='fc3')
+    return x
+
+
+def Critic(obs):
+    activation_fn = tf.tanh
+    kernel_initializer = tf.initializers.orthogonal
+    x = tf.compat.v1.layers.dense(
+        obs, units=64, activation=activation_fn,
+        kernel_initializer=kernel_initializer, name='fc1')
+    x = tf.compat.v1.layers.dense(
+        x, units=64, activation=activation_fn,
+        kernel_initializer=kernel_initializer, name='fc2')
+    x = tf.compat.v1.layers.dense(
+        x, units=1, activation=None,
+        kernel_initializer=kernel_initializer, name='fc3')
+    return tf.squeeze(x, axis=1)
 
 
 class PPOAgent():
@@ -77,7 +107,7 @@ class PPOAgent():
 
         self.buffer = Buffer.PPOBuffer(
             obs_dim, act_dim, size=horizon, gamma=gamma, lam=lam)
-        self._build_network()
+        # self._build_network()
         [self.obs_ph, self.all_phs, self.get_action_ops,
          self.v, self.pi_loss, self.v_loss,
          self.approx_kl, self.approx_ent, self.clipfrac,
@@ -109,17 +139,21 @@ class PPOAgent():
             shape=[None, ], dtype=tf.float32, name="logp_old_ph")
 
         # Probability distribution
-        logits = self.actor(obs_ph)
-        logstd = tf.compat.v1.get_variable(
-            name='pi/logstd',
-            initializer=-0.5 * np.ones(self.act_dim, dtype=np.float32))
-        std = tf.exp(logstd)
-        pi = logits + tf.random.normal(tf.shape(logits)) * std
-        logp_a = gaussian_likelihood(act_ph, logits, logstd)
-        logp_pi = gaussian_likelihood(pi, logits, logstd)
+        # logits = self.actor(obs_ph)
+        with tf.variable_scope('pi'):
+            logits = Actor(obs_ph, self.act_dim)
+            logstd = tf.compat.v1.get_variable(
+                name='logstd',
+                initializer=-0.5 * np.ones(self.act_dim, dtype=np.float32))
+            std = tf.exp(logstd)
+            pi = logits + tf.random.normal(tf.shape(logits)) * std
+            logp_a = gaussian_likelihood(act_ph, logits, logstd)
+            logp_pi = gaussian_likelihood(pi, logits, logstd)
 
         # State value
-        v = tf.compat.v1.squeeze(self.critic(obs_ph), axis=1)
+        # v = self.critic(obs_ph)
+        with tf.variable_scope('v'):
+            v = Critic(obs_ph)
 
         get_action_ops = [pi, v, logp_pi]
 
