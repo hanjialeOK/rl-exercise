@@ -61,7 +61,7 @@ class CriticMLP(tf.keras.Model):
 
 
 def Actor(obs, ac_dim):
-    activation_fn = tf.tanh
+    activation_fn = tf.nn.relu
     kernel_initializer = tf.initializers.orthogonal
     x = tf.compat.v1.layers.dense(
         obs, units=64, activation=activation_fn,
@@ -76,7 +76,7 @@ def Actor(obs, ac_dim):
 
 
 def Critic(obs):
-    activation_fn = tf.tanh
+    activation_fn = tf.nn.relu
     kernel_initializer = tf.initializers.orthogonal
     x = tf.compat.v1.layers.dense(
         obs, units=64, activation=activation_fn,
