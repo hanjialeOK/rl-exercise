@@ -56,8 +56,10 @@ class CriticMLP(tf.keras.Model):
 
 
 class DDPGAgent():
-    def __init__(self, sess, obs_dim, act_dim, ac_limit, mem_capacity=int(1e6), batch_size=256,
-                 gamma=0.99, actor_lr=3e-4, critic_lr=3e-4, tau=0.005):
+    def __init__(self, sess, obs_dim, act_dim, ac_limit,
+                 mem_capacity=int(1e6), batch_size=256,
+                 gamma=0.99, actor_lr=3e-4, critic_lr=3e-4,
+                 tau=0.005, noise_scale=0.1):
         self.sess = sess
         self.obs_dim = obs_dim
         self.act_dim = act_dim
@@ -67,6 +69,7 @@ class DDPGAgent():
         self.actor_lr = actor_lr
         self.critic_lr = critic_lr
         self.tau = tau
+        self.noise_scale = noise_scale
 
         self.buffer = Buffer.ReplayBuffer(obs_dim, act_dim, mem_capacity)
         self._build_network()
@@ -143,18 +146,18 @@ class DDPGAgent():
                 target_update, target_init,
                 train_actor_op, train_critic_op]
 
-    def select_action(self, obs, noise_scale=0):
+    def select_action(self, obs, noise=True):
         pi = self.sess.run(
             self.pi, feed_dict={self.obs_ph: obs.reshape(1, -1)})
-        ac = (pi[0]
-              + np.random.normal(0, self.ac_limit * noise_scale, size=self.act_dim))
-        return np.clip(ac, -self.ac_limit, self.ac_limit)
+        ac = pi[0]
+        if noise:
+            ac_noise = np.random.normal(
+                0, self.ac_limit * self.noise_scale, size=self.act_dim)
+            ac = np.clip(ac + ac_noise, -self.ac_limit, self.ac_limit)
+        return ac
 
-    def sync_params(self, init=False):
-        if init:
-            self.sess.run(self.target_init)
-        else:
-            self.sess.run(self.target_update)
+    def target_params_init(self, init=False):
+        self.sess.run(self.target_init)
 
     def update(self):
         buf_data = self.buffer.sample_batch(self.batch_size)
@@ -163,6 +166,7 @@ class DDPGAgent():
 
         self.sess.run([self.train_actor_op, self.train_critic_op],
                       feed_dict=inputs)
+        self.sess.run(self.target_update)
 
     def store_transition(self, obs, next_obs, action, reward, done):
         self.buffer.store(obs, next_obs, action, reward, done)
