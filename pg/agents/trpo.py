@@ -165,21 +165,21 @@ class TRPOAgent():
             shape=(None, ) + self.act_dim, dtype=tf.float32, name='old_logstd_ph')
 
         # Probability distribution
-        logits = self.actor(obs_ph)
+        mu = self.actor(obs_ph)
         logstd = tf.compat.v1.get_variable(
             name='pi/logstd',
             initializer=-0.5 * np.ones(self.act_dim, dtype=np.float32))
         std = tf.exp(logstd)
-        pi = logits + tf.compat.v1.random_normal(tf.shape(logits)) * std
-        logp = gaussian_likelihood(act_ph, logits, logstd)
-        logp_pi = gaussian_likelihood(pi, logits, logstd)
+        pi = mu + tf.random.normal(tf.shape(mu)) * std
+        logp = gaussian_likelihood(act_ph, mu, logstd)
+        logp_pi = gaussian_likelihood(pi, mu, logstd)
         d_kl = diagonal_gaussian_kl(
-            logits, logstd, old_logits_ph, old_logstd_ph)
+            mu, logstd, old_logits_ph, old_logstd_ph)
 
         # State value
         v = self.critic(obs_ph)
 
-        get_action_ops = [pi, v, logp_pi, logits, logstd]
+        get_action_ops = [pi, v, logp_pi, mu, logstd]
 
         all_phs = [obs_ph, act_ph, adv_ph, ret_ph,
                    logp_old_ph, old_logits_ph, old_logstd_ph]

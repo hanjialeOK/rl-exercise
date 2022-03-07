@@ -110,14 +110,14 @@ class PPOAgent():
             shape=[None, ], dtype=tf.float32, name="logp_old_ph")
 
         # Probability distribution
-        logits = self.actor(obs_ph)
+        mu = self.actor(obs_ph)
         logstd = tf.compat.v1.get_variable(
             name='pi/logstd',
             initializer=-0.5 * np.ones(self.act_dim, dtype=np.float32))
         std = tf.exp(logstd)
-        pi = logits + tf.random.normal(tf.shape(logits)) * std
-        logp_a = gaussian_likelihood(act_ph, logits, logstd)
-        logp_pi = gaussian_likelihood(pi, logits, logstd)
+        pi = mu + tf.random.normal(tf.shape(mu)) * std
+        logp_a = gaussian_likelihood(act_ph, mu, logstd)
+        logp_pi = gaussian_likelihood(pi, mu, logstd)
         entropy = tf.reduce_sum(
             logstd + .5 * np.log(2.0 * np.pi * np.e), axis=-1)
 
