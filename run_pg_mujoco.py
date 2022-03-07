@@ -9,7 +9,7 @@ import pg.agents.trpo as TRPO
 import pg.agents.ppo as PPO
 import pg.agents.ppo2 as PPO2
 
-from termcolor import cprint
+from termcolor import cprint, colored
 from utils.serialization_utils import convert_json, save_json
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
@@ -169,8 +169,10 @@ def main():
                         tag="episode_info/length", simple_value=ep_len)
                 ])
                 summary_writer.add_summary(episode_summary, ep_count)
+                ep_ret_text = colored(f'{ep_ret:.1f}',
+                                      color='green', attrs=['bold'])
                 print(f'Epoch: {epoch}/{epochs}, '
-                      f'ep_len: {ep_len}, ep_ret: {ep_ret:.1f}, '
+                      f'ep_len: {ep_len}, ep_ret: {ep_ret_text}, '
                       f'training {exp_name}: {epoch/epochs:.1%}')
                 # Episode restart
                 obs = env.reset()
