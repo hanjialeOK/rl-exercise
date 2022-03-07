@@ -6,6 +6,8 @@ import os
 import argparse
 
 import dpg.agents.ddpg as DDPG
+import dpg.agents.td3 as TD3
+import dpg.agents.sac as SAC
 
 from termcolor import cprint, colored
 from utils.serialization_utils import convert_json, save_json
@@ -23,7 +25,7 @@ def evaluate(env_eval, agent, num_ep=10):
         ep_len = 0
         while True:
             ac = agent.select_action(obs)
-            obs, reward, done, _ = env_eval.step(ac)
+            obs, reward, done, _ = env_eval.step(ac, noise=False)
             ep_ret += reward
             ep_len += 1
             if done:
@@ -48,7 +50,7 @@ def main():
     parser.add_argument('--env_name', '--env', type=str,
                         default='HalfCheetah-v2')
     parser.add_argument('--exp_name', type=str, default='DDPG',
-                        choices=['DPG', 'DDPG', 'TD3'],
+                        choices=['DPG', 'DDPG', 'TD3', 'SAC'],
                         help='Experiment name',)
     parser.add_argument('--allow_eval', action='store_true',
                         help='Whether to eval agent')
@@ -92,7 +94,7 @@ def main():
     env = gym.make(env_name)
     env.seed(seed)
     env_eval = gym.make(env_name)
-    env_eval.seed(seed)
+    env_eval.seed(seed + 1)
     obs_dim = env.observation_space.shape
     act_dim = env.action_space.shape
     max_action = float(env.action_space.high[0])
@@ -121,19 +123,22 @@ def main():
     if exp_name == 'DPG':
         raise NotImplementedError
     elif exp_name == 'DDPG':
-        agent = DDPG.DDPGAgent(sess, obs_dim, act_dim, max_action)
+        agent = DDPG.DDPGAgent(sess, obs_dim, act_dim,
+                               max_action, noise_scale=0.1)
     elif exp_name == 'TD3':
-        raise NotImplementedError
+        agent = TD3.TD3Agent(sess, obs_dim, act_dim,
+                             max_action, noise_scale=0.1)
+    elif exp_name == 'SAC':
+        agent = SAC.SACAgent(sess, obs_dim, act_dim, max_action)
     else:
         raise ValueError(f'Unknown agent: {exp_name}')
 
     sess.run(tf.compat.v1.global_variables_initializer())
-    agent.sync_params(init=True)
+    agent.target_params_init()
 
     # Params
     total_steps = int(1e6)
     start_steps = int(25e3)
-    ac_noise = 0.1
     eval_freq = int(5e3)
 
     cprint(f'Running experiment: {exp_name}\n', color='cyan', attrs=['bold'])
@@ -146,7 +151,7 @@ def main():
 
     for t in range(1, total_steps + 1):
         if t > start_steps:
-            ac = agent.select_action(obs, ac_noise)
+            ac = agent.select_action(obs, noise=True)
         else:
             ac = env.action_space.sample()
 
@@ -181,7 +186,6 @@ def main():
 
         if t > start_steps:
             agent.update()
-            agent.sync_params(init=False)
 
         # Evaluate
         if t % eval_freq == 0 and args.allow_eval:
