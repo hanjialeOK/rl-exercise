@@ -4,7 +4,7 @@ import random
 import tensorflow as tf
 from collections import namedtuple
 
-from deepq.agents.dqn_agent import DQNAgent, WrappedAdamOptimizer
+from deepq.agents.dqn import DQNAgent, WrappedAdamOptimizer
 
 C51NetworkType = namedtuple(
     'c51_network', ['q_values', 'logits', 'probabilities'])
