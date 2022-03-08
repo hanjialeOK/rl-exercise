@@ -1,5 +1,6 @@
 import numpy as np
 import tensorflow as tf
+import tensorflow_probability as tfp
 import os
 
 import dpg.buffer.replaybuffer as Buffer
@@ -46,11 +47,19 @@ class ActorMLP(tf.keras.Model):
         logstd = self.dense4(x)
         logstd = tf.clip_by_value(logstd, LOG_STD_MIN, LOG_STD_MAX)
         std = tf.exp(logstd)
-        pi = mu + tf.random.normal(tf.shape(mu)) * std
-        logp_pi = gaussian_likelihood(pi, mu, logstd)
-        # NOTE: This formula is a little bit magic.
-        logp_pi -= tf.reduce_sum(2*(np.log(2) - pi -
-                                 tf.nn.softplus(-2*pi)), axis=1)
+        # pi = mu + tf.random.normal(tf.shape(mu)) * std
+        # logp_pi = gaussian_likelihood(pi, mu, logstd)
+        dist = tfp.distributions.Normal(loc=mu, scale=std)
+        pi = dist.sample()
+        logp_pi = tf.reduce_sum(dist.log_prob(pi), axis=1)
+        # NOTE: This formula is a little bit magic. To get an understanding of where it
+        # comes from, check out the original SAC paper (arXiv 1801.01290) and look in
+        # appendix C. This is a more numerically-stable equivalent to Eq 21.
+        # Try deriving it yourself as a (very difficult) exercise. :)
+        logp_pi -= tf.reduce_sum(
+            2*(np.log(2) - pi - tf.nn.softplus(-2*pi)), axis=1)
+        # logp_pi -= tf.reduce_sum(tf.log(1. - tf.tanh(pi) ** 2 + EPS), axis=1)
+
         # Squash those unbounded actions!
         mu = tf.tanh(mu)
         pi = tf.tanh(pi)
