@@ -56,9 +56,11 @@ class ActorMLP(tf.keras.Model):
         # comes from, check out the original SAC paper (arXiv 1801.01290) and look in
         # appendix C. This is a more numerically-stable equivalent to Eq 21.
         # Try deriving it yourself as a (very difficult) exercise. :)
-        logp_pi -= tf.reduce_sum(
-            2*(np.log(2) - pi - tf.nn.softplus(-2*pi)), axis=1)
-        # logp_pi -= tf.reduce_sum(tf.log(1. - tf.tanh(pi) ** 2 + EPS), axis=1)
+        # logp_pi -= tf.reduce_sum(
+        #     2*(np.log(2) - pi - tf.nn.softplus(-2*pi)), axis=1)
+
+        # NOTE: 1e-6 work, but 1e-8 do not work.
+        logp_pi -= tf.reduce_sum(tf.log(1. - tf.tanh(pi) ** 2 + 1e-6), axis=1)
 
         # Squash those unbounded actions!
         mu = tf.tanh(mu)
@@ -201,12 +203,9 @@ class SACAgent():
                 train_actor_op, train_critic_op]
 
     def select_action(self, obs, noise=True):
-        if noise:
-            pi = self.sess.run(
-                self.pi, feed_dict={self.obs_ph: obs.reshape(1, -1)})
-        else:
-            pi = self.sess.run(
-                self.mu, feed_dict={self.obs_ph: obs.reshape(1, -1)})
+        get_ac_op = self.pi if noise else self.mu
+        pi = self.sess.run(
+            get_ac_op, feed_dict={self.obs_ph: obs.reshape(1, -1)})
         return pi[0]
 
     def target_params_init(self):
