@@ -66,12 +66,12 @@ class TRPOBuffer:
         self.ret_buf = np.zeros(size, dtype=np.float32)
         self.val_buf = np.zeros(size, dtype=np.float32)
         self.logp_buf = np.zeros(size, dtype=np.float32)
-        self.logits_buf = np.zeros((size, ) + act_dim, dtype=np.float32)
+        self.mu_buf = np.zeros((size, ) + act_dim, dtype=np.float32)
         self.logstd_buf = np.zeros((size, ) + act_dim, dtype=np.float32)
         self.gamma, self.lam = gamma, lam
         self.ptr, self.max_size = 0, size
 
-    def store(self, obs, act, rew, done, val, logp, logits, logstd):
+    def store(self, obs, act, rew, done, val, logp, mu, logstd):
         """
         Store transition.
         """
@@ -82,7 +82,7 @@ class TRPOBuffer:
         self.done_buf[self.ptr] = done
         self.val_buf[self.ptr] = val
         self.logp_buf[self.ptr] = logp
-        self.logits_buf[self.ptr] = logits
+        self.mu_buf[self.ptr] = mu
         self.logstd_buf[self.ptr] = logstd
         self.ptr += 1
 
@@ -109,4 +109,4 @@ class TRPOBuffer:
         self.adv_buf = (self.adv_buf - np.mean(self.adv_buf)) / \
             (np.std(self.adv_buf) + EPS)
         return [self.obs_buf, self.act_buf, self.adv_buf, self.ret_buf,
-                self.logp_buf, self.logits_buf, self.logstd_buf]
+                self.logp_buf, self.mu_buf, self.logstd_buf]
