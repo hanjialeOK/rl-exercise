@@ -1,18 +1,11 @@
 import numpy as np
 import tensorflow as tf
 import os
+import tensorflow_probability as tfp
 
 import pg.buffer.vpgbuffer as Buffer
 
 from termcolor import cprint
-
-EPS = 1e-8
-
-
-def gaussian_likelihood(x, mu, logstd):
-    pre_sum = -0.5 * (((x - mu) / (tf.exp(logstd) + EPS)) ** 2 +
-                      2 * logstd + np.log(2 * np.pi))
-    return tf.reduce_sum(pre_sum, axis=1)
 
 
 class ActorMLP(tf.keras.Model):
@@ -29,13 +22,16 @@ class ActorMLP(tf.keras.Model):
         self.dense3 = tf.keras.layers.Dense(
             ac_dim[0],
             kernel_initializer=kernel_initializer, name='fc3')
+        self.logstd = tf.compat.v1.get_variable(
+            name=os.path.join(name, 'logstd'),
+            initializer=-0.5*np.ones(ac_dim, dtype=np.float32))
 
     def call(self, state):
         x = tf.cast(state, tf.float32)
         x = self.dense1(x)
         x = self.dense2(x)
-        x = self.dense3(x)
-        return x
+        mu = self.dense3(x)
+        return mu, self.logstd
 
 
 class CriticMLP(tf.keras.Model):
@@ -69,10 +65,13 @@ def Actor(obs, ac_dim):
     x = tf.compat.v1.layers.dense(
         x, units=64, activation=activation_fn,
         kernel_initializer=kernel_initializer, name='fc2')
-    x = tf.compat.v1.layers.dense(
+    mu = tf.compat.v1.layers.dense(
         x, units=ac_dim[0], activation=None,
         kernel_initializer=kernel_initializer, name='fc3')
-    return x
+    logstd = tf.compat.v1.get_variable(
+        name='logstd',
+        initializer=-0.5 * np.ones(ac_dim, dtype=np.float32))
+    return mu, logstd
 
 
 def Critic(obs):
@@ -107,7 +106,7 @@ class PPOAgent():
 
         self.buffer = Buffer.PPOBuffer(
             obs_dim, act_dim, size=horizon, gamma=gamma, lam=lam)
-        # self._build_network()
+        self._build_network()
         [self.obs_ph, self.all_phs, self.get_action_ops,
          self.v, self.pi_loss, self.v_loss,
          self.approx_kl, self.approx_ent, self.clipfrac,
@@ -139,21 +138,15 @@ class PPOAgent():
             shape=[None, ], dtype=tf.float32, name="logp_old_ph")
 
         # Probability distribution
-        # mu = self.actor(obs_ph)
-        with tf.variable_scope('pi'):
-            mu = Actor(obs_ph, self.act_dim)
-            logstd = tf.compat.v1.get_variable(
-                name='logstd',
-                initializer=-0.5 * np.ones(self.act_dim, dtype=np.float32))
-            std = tf.exp(logstd)
-            pi = mu + tf.random.normal(tf.shape(mu)) * std
-            logp_a = gaussian_likelihood(act_ph, mu, logstd)
-            logp_pi = gaussian_likelihood(pi, mu, logstd)
+        mu, logstd = self.actor(obs_ph)
+        std = tf.exp(logstd)
+        dist = tfp.distributions.Normal(loc=mu, scale=std)
+        pi = dist.sample()
+        logp_a = tf.reduce_sum(dist.log_prob(act_ph), axis=1)
+        logp_pi = tf.reduce_sum(dist.log_prob(pi), axis=1)
 
         # State value
-        # v = self.critic(obs_ph)
-        with tf.variable_scope('v'):
-            v = Critic(obs_ph)
+        v = self.critic(obs_ph)
 
         get_action_ops = [pi, v, logp_pi]
 
