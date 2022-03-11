@@ -159,8 +159,8 @@ class TRPOAgent():
             shape=[None, ], dtype=tf.float32, name="ret_ph")
         logp_old_ph = tf.compat.v1.placeholder(
             shape=[None, ], dtype=tf.float32, name="logp_old_ph")
-        old_logits_ph = tf.compat.v1.placeholder(
-            shape=(None, ) + self.act_dim, dtype=tf.float32, name='old_logits_ph')
+        old_mu_ph = tf.compat.v1.placeholder(
+            shape=(None, ) + self.act_dim, dtype=tf.float32, name='old_mu_ph')
         old_logstd_ph = tf.compat.v1.placeholder(
             shape=(None, ) + self.act_dim, dtype=tf.float32, name='old_logstd_ph')
 
@@ -174,7 +174,7 @@ class TRPOAgent():
         logp = gaussian_likelihood(act_ph, mu, logstd)
         logp_pi = gaussian_likelihood(pi, mu, logstd)
         d_kl = diagonal_gaussian_kl(
-            mu, logstd, old_logits_ph, old_logstd_ph)
+            mu, logstd, old_mu_ph, old_logstd_ph)
 
         # State value
         v = self.critic(obs_ph)
@@ -182,7 +182,7 @@ class TRPOAgent():
         get_action_ops = [pi, v, logp_pi, mu, logstd]
 
         all_phs = [obs_ph, act_ph, adv_ph, ret_ph,
-                   logp_old_ph, old_logits_ph, old_logstd_ph]
+                   logp_old_ph, old_mu_ph, old_logstd_ph]
 
         # TRPO losses
         ratio = tf.exp(logp - logp_old_ph)  # pi(a|s) / pi_old(a|s)
@@ -260,9 +260,9 @@ class TRPOAgent():
                                         max_to_keep=4)
 
     def select_action(self, obs):
-        [pi, v_t, logp_pi_t, logits_t, logstd_t] = self.sess.run(
+        [pi, v_t, logp_pi_t, mu_t, logstd_t] = self.sess.run(
             self.get_action_ops, feed_dict={self.obs_ph: obs.reshape(1, -1)})
-        self.extra_info = [v_t, logp_pi_t, logits_t, logstd_t]
+        self.extra_info = [v_t, logp_pi_t, mu_t, logstd_t]
         return pi[0]
 
     def compute_v(self, obs):
@@ -270,9 +270,9 @@ class TRPOAgent():
             self.v, feed_dict={self.obs_ph: obs.reshape(1, -1)})
 
     def store_transition(self, obs, action, reward, done):
-        [v_t, logp_pi_t, logits_t, logstd_t] = self.extra_info
+        [v_t, logp_pi_t, mu_t, logstd_t] = self.extra_info
         self.buffer.store(obs, action, reward, done,
-                          v_t, logp_pi_t, logits_t, logstd_t)
+                          v_t, logp_pi_t, mu_t, logstd_t)
 
     def bundle(self, checkpoint_dir, iteration):
         if not os.path.exists(checkpoint_dir):
