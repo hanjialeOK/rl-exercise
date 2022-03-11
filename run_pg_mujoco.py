@@ -5,9 +5,11 @@ import time
 import os
 import argparse
 
+import pg.agents.vpg as VPG
 import pg.agents.trpo as TRPO
 import pg.agents.ppo as PPO
 import pg.agents.ppo2 as PPO2
+import pg.agents.ppo_m as PPOM
 
 from termcolor import cprint, colored
 from utils.serialization_utils import convert_json, save_json
@@ -52,7 +54,7 @@ def main():
     parser.add_argument('--env_name', '--env', type=str,
                         default='HalfCheetah-v2')
     parser.add_argument('--exp_name', type=str, default='PPO',
-                        choices=['TRPO', 'PPO', 'PPO2'],
+                        choices=['VPG', 'TRPO', 'PPO', 'PPO2', 'PPOM'],
                         help='Experiment name',)
     parser.add_argument('--allow_eval', action='store_true',
                         help='Whether to eval agent')
@@ -121,10 +123,14 @@ def main():
            f'{gpu_list}\n',
            color='cyan', attrs=['bold'])
 
-    if exp_name == 'TRPO':
+    if exp_name == 'VPG':
+        agent = VPG.VPGAgent(sess, obs_dim, act_dim, horizon=1000)
+    elif exp_name == 'TRPO':
         agent = TRPO.TRPOAgent(sess, obs_dim, act_dim, horizon=1000)
     elif exp_name == 'PPO':
         agent = PPO.PPOAgent(sess, obs_dim, act_dim, horizon=1000)
+    elif exp_name == 'PPOM':
+        agent = PPOM.PPOAgent(sess, obs_dim, act_dim, horizon=1000)
     elif exp_name == 'PPO2':
         agent = PPO2.PPOAgent(sess, obs_dim, act_dim, horizon=2048)
     else:
