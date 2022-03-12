@@ -1,16 +1,9 @@
 import numpy as np
 import tensorflow as tf
+import tensorflow_probability as tfp
 import os
 
 import pg.buffer.vpgbuffer as Buffer
-
-EPS = 1e-8
-
-
-def gaussian_likelihood(x, mu, logstd):
-    pre_sum = -0.5 * (((x - mu) / (tf.exp(logstd) + EPS)) ** 2 +
-                      2 * logstd + np.log(2 * np.pi))
-    return tf.reduce_sum(pre_sum, axis=1)
 
 
 class ActorMLP(tf.keras.Model):
@@ -27,13 +20,16 @@ class ActorMLP(tf.keras.Model):
         self.dense3 = tf.keras.layers.Dense(
             ac_dim[0],
             kernel_initializer=kernel_initializer, name='fc3')
+        self.logstd = tf.compat.v1.get_variable(
+            name=os.path.join(name, 'logstd'),
+            initializer=-0.5*np.ones(ac_dim, dtype=np.float32))
 
     def call(self, state):
         x = tf.cast(state, tf.float32)
         x = self.dense1(x)
         x = self.dense2(x)
-        x = self.dense3(x)
-        return x
+        mu = self.dense3(x)
+        return mu, self.logstd
 
 
 class CriticMLP(tf.keras.Model):
@@ -62,7 +58,8 @@ class PPOAgent():
     def __init__(self, sess, obs_dim, act_dim, clip_ratio=0.2, lr=3e-4,
                  train_iters=10, target_kl=0.01,
                  ent_coef=0.0, vf_coef=0.5, max_grad_norm=0.5,
-                 horizon=2048, minibatch=64, gamma=0.99, lam=0.95):
+                 horizon=2048, minibatch=64, gamma=0.99, lam=0.95,
+                 grad_clip=False):
         self.sess = sess
         self.obs_dim = obs_dim
         self.act_dim = act_dim
@@ -75,6 +72,7 @@ class PPOAgent():
         self.ent_coef = ent_coef
         self.vf_coef = vf_coef
         self.max_grad_norm = max_grad_norm
+        self.grad_clip = grad_clip
 
         self.buffer = Buffer.PPOBuffer(
             obs_dim, act_dim, size=horizon, gamma=gamma, lam=lam)
@@ -110,16 +108,13 @@ class PPOAgent():
             shape=[None, ], dtype=tf.float32, name="logp_old_ph")
 
         # Probability distribution
-        mu = self.actor(obs_ph)
-        logstd = tf.compat.v1.get_variable(
-            name='pi/logstd',
-            initializer=-0.5 * np.ones(self.act_dim, dtype=np.float32))
+        mu, logstd = self.actor(obs_ph)
         std = tf.exp(logstd)
-        pi = mu + tf.random.normal(tf.shape(mu)) * std
-        logp_a = gaussian_likelihood(act_ph, mu, logstd)
-        logp_pi = gaussian_likelihood(pi, mu, logstd)
-        entropy = tf.reduce_sum(
-            logstd + .5 * np.log(2.0 * np.pi * np.e), axis=-1)
+        dist = tfp.distributions.Normal(loc=mu, scale=std)
+        pi = dist.sample()
+        logp_a = tf.reduce_sum(dist.log_prob(act_ph), axis=1)
+        logp_pi = tf.reduce_sum(dist.log_prob(pi), axis=1)
+        entropy = dist.entropy()
 
         # State value
         v = self.critic(obs_ph)
@@ -135,7 +130,7 @@ class PPOAgent():
                                      (1 - self.clip_ratio) * adv_ph)
         pi_loss = -tf.reduce_mean(
             tf.minimum(ratio * adv_ph, min_adv))
-        v_loss = tf.reduce_mean((ret_ph - v) ** 2)
+        v_loss = 0.5 * tf.reduce_mean((ret_ph - v) ** 2)
 
         # Info (useful to watch during learning)
         # a sample estimate for KL-divergence, easy to compute
@@ -152,10 +147,13 @@ class PPOAgent():
         # Optimizers
         optimizer = tf.compat.v1.train.AdamOptimizer(
             learning_rate=self.lr, epsilon=1e-5)
-        grads_and_vars = optimizer.compute_gradients(loss)
-        capped_grads_and_vars = [(tf.clip_by_norm(grad, self.max_grad_norm), var)
-                                 for grad, var in grads_and_vars]
-        train_op = optimizer.apply_gradients(capped_grads_and_vars)
+        if self.grad_clip:
+            grads_and_vars = optimizer.compute_gradients(loss)
+            capped_grads_and_vars = [(tf.clip_by_norm(grad, self.max_grad_norm), var)
+                                     for grad, var in grads_and_vars]
+            train_op = optimizer.apply_gradients(capped_grads_and_vars)
+        else:
+            train_op = optimizer.minimize(loss)
         return [obs_ph, all_phs, get_action_ops,
                 v, pi_loss, v_loss,
                 approx_kl, approx_ent, clipfrac,
