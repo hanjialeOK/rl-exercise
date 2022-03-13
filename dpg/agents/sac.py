@@ -63,9 +63,9 @@ class ActorMLP(tf.keras.Model):
         logp_pi -= tf.reduce_sum(tf.log(1. - tf.tanh(pi) ** 2 + 1e-6), axis=1)
 
         # Squash those unbounded actions!
-        mu = tf.tanh(mu)
-        pi = tf.tanh(pi)
-        return mu * self.ac_limit, pi * self.ac_limit, logp_pi
+        mu = tf.tanh(mu) * self.ac_limit
+        pi = tf.tanh(pi) * self.ac_limit
+        return mu, pi, logp_pi
 
 
 class CriticMLP(tf.keras.Model):
