@@ -12,7 +12,7 @@ class ActorMLP(tf.keras.Model):
     def __init__(self, ac_dim, name=None):
         super(ActorMLP, self).__init__(name=name)
         activation_fn = tf.keras.activations.tanh
-        kernel_initializer = tf.initializers.orthogonal
+        kernel_initializer = None
         self.dense1 = tf.keras.layers.Dense(
             64, activation=activation_fn,
             kernel_initializer=kernel_initializer, name='fc1')
@@ -38,7 +38,7 @@ class CriticMLP(tf.keras.Model):
     def __init__(self, name=None):
         super(CriticMLP, self).__init__(name=name)
         activation_fn = tf.keras.activations.tanh
-        kernel_initializer = tf.initializers.orthogonal
+        kernel_initializer = None
         self.dense1 = tf.keras.layers.Dense(
             64, activation=activation_fn,
             kernel_initializer=kernel_initializer, name='fc1')
@@ -91,8 +91,8 @@ def Critic(obs):
 
 class PPOAgent():
     def __init__(self, sess, obs_dim, act_dim, clip_ratio=0.2, pi_lr=3e-4,
-                 vf_lr=1e-3, train_pi_iters=80, train_v_iters=80, target_kl=0.01,
-                 horizon=1000, gamma=0.99, lam=0.95):
+                 vf_lr=3e-4, train_pi_iters=80, train_v_iters=80, target_kl=0.01,
+                 horizon=1000, gamma=0.99, lam=0.95, clip_vf=0.1, summary_writer=None,):
         self.sess = sess
         self.obs_dim = obs_dim
         self.act_dim = act_dim
@@ -103,15 +103,26 @@ class PPOAgent():
         self.train_v_iters = train_v_iters
         self.target_kl = target_kl
         self.horizon = horizon
+        self.clip_vf = clip_vf
+        self.summary_writer = summary_writer
 
         self.buffer = Buffer.PPOBuffer(
             obs_dim, act_dim, size=horizon, gamma=gamma, lam=lam)
         self._build_network()
         [self.obs_ph, self.all_phs, self.get_action_ops,
          self.v, self.pi_loss, self.v_loss,
-         self.approx_kl, self.approx_ent, self.clipfrac,
+         self.approx_kl, self.approx_ent,
+         self.ratio_clipfrac, self.vf_clipfrac,
          self.train_pi, self.train_v] = self._build_train_op()
         self.saver = self._build_saver()
+
+        if self.summary_writer is not None:
+            # All tf.summaries should have been defined prior to running this.
+            self.merged_summaries = tf.summary.merge_all()
+
+        self.ratio_clipbox = np.zeros(horizon, dtype=np.float32)
+        self.vf_clipbox = np.zeros(horizon, dtype=np.float32)
+        self.train_count = 0
 
     # Note: Required to be called after _build_train_op(), otherwise return []
     def _get_var_list(self, name='pi'):
@@ -153,23 +164,32 @@ class PPOAgent():
         all_phs = [obs_ph, act_ph, adv_ph, ret_ph, logp_old_ph]
 
         # PPO objectives
-        ratio = tf.exp(logp_a - logp_old_ph)  # pi(a|s) / pi_old(a|s)
-        min_adv = tf.compat.v1.where(adv_ph > 0,
-                                     (1 + self.clip_ratio) * adv_ph,
-                                     (1 - self.clip_ratio) * adv_ph)
-        pi_loss = -tf.reduce_mean(
-            tf.minimum(ratio * adv_ph, min_adv))
-        v_loss = tf.reduce_mean((ret_ph - v) ** 2)
+        # pi(a|s) / pi_old(a|s), should be one at the first iteration
+        ratio = tf.exp(logp_a - logp_old_ph)
+        pi_loss1 = adv_ph * ratio
+        pi_loss2 = adv_ph * tf.clip_by_value(
+            ratio, 1 - self.clip_ratio, 1 + self.clip_ratio)
+        pi_loss = -tf.reduce_mean(tf.minimum(pi_loss1, pi_loss2))
+
+        v_loss = 0.5 * tf.reduce_mean(tf.square(ret_ph - v))
 
         # Info (useful to watch during learning)
         # a sample estimate for KL-divergence, easy to compute
-        approx_kl = tf.reduce_mean(logp_old_ph - logp_a)
+        # approx_kl = tf.reduce_mean(logp_old_ph - logp_a)
+        approx_kl = tf.reduce_mean(ratio - 1 - (logp_a - logp_old_ph))
         # a sample estimate for entropy, also easy to compute
         approx_ent = tf.reduce_mean(-logp_a)
-        clipped = tf.logical_or(
+        ratio_clipped = tf.logical_or(
             ratio > (1 + self.clip_ratio), ratio < (1 - self.clip_ratio))
-        clipfrac = tf.reduce_mean(
-            tf.cast(clipped, tf.float32))
+        ratio_clipfrac = tf.reduce_mean(tf.cast(ratio_clipped, tf.float32))
+        vf_clipped = (ret_ph - v) > tf.abs(ret_ph * self.clip_vf)
+        vf_clipfrac = tf.reduce_mean(tf.cast(vf_clipped, tf.float32))
+
+        if self.summary_writer is not None:
+            with tf.variable_scope('pi'):
+                pass
+            with tf.variable_scope('vf'):
+                pass
 
         # Optimizers
         train_pi = tf.compat.v1.train.AdamOptimizer(
@@ -179,10 +199,13 @@ class PPOAgent():
 
         return [obs_ph, all_phs, get_action_ops,
                 v, pi_loss, v_loss,
-                approx_kl, approx_ent, clipfrac,
+                approx_kl, approx_ent,
+                ratio_clipfrac, vf_clipfrac,
                 train_pi, train_v]
 
     def update(self):
+        self.train_count += 1
+
         buf_data = self.buffer.get()
         inputs = {k: v for k, v in zip(self.all_phs, buf_data)}
 
@@ -197,10 +220,22 @@ class PPOAgent():
                        color='green', attrs=['bold'])
                 break
         for _ in range(self.train_v_iters):
-            self.sess.run(self.train_v, feed_dict=inputs)
+            ratio_clipf, vf_clipf, _ = self.sess.run(
+                [self.ratio_clipfrac, self.vf_clipfrac, self.train_v],
+                feed_dict=inputs)
+            self.ratio_clipbox[self.train_count - 1] = ratio_clipf
+            self.vf_clipbox[self.train_count - 1] = vf_clipf
 
-        pi_loss_new, v_loss_new, kl, cf = self.sess.run(
-            [self.pi_loss, self.v_loss, self.approx_kl, self.clipfrac],
+        vf_summary = tf.compat.v1.Summary(value=[
+            tf.compat.v1.Summary.Value(
+                tag="vf/clipfrac", simple_value=np.mean(self.vf_clipbox)),
+            tf.compat.v1.Summary.Value(
+                tag="ratio/clipfrac", simple_value=np.mean(self.ratio_clipbox))
+        ])
+        self.summary_writer.add_summary(vf_summary, self.train_count)
+
+        pi_loss_new, v_loss_new, kl = self.sess.run(
+            [self.pi_loss, self.v_loss, self.approx_kl],
             feed_dict=inputs)
 
     def _build_saver(self):
