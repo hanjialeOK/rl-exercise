@@ -101,8 +101,8 @@ class PPOBuffer:
         # the next two lines implement the advantage normalization trick
         self.adv_buf = (self.adv_buf - np.mean(self.adv_buf)) / \
             (np.std(self.adv_buf) + EPS)
-        return [self.obs_buf, self.act_buf, self.adv_buf, self.ret_buf,
-                self.logp_buf]
+        return [self.obs_buf, self.act_buf, self.adv_buf,
+                self.ret_buf, self.logp_buf, self.val_buf]
 
 
 class TRPOBuffer:
