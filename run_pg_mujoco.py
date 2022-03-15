@@ -14,7 +14,7 @@ import pg.agents.ppo_m as PPOM
 import common.vec_normalize as Wrapper
 
 from termcolor import cprint, colored
-from utils.serialization_utils import convert_json, save_json
+from common.serialization_utils import convert_json, save_json
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 

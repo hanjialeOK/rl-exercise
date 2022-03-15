@@ -10,7 +10,7 @@ import dpg.agents.td3 as TD3
 import dpg.agents.sac as SAC
 
 from termcolor import cprint, colored
-from utils.serialization_utils import convert_json, save_json
+from common.serialization_utils import convert_json, save_json
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 

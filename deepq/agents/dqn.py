@@ -3,7 +3,7 @@ import os
 import random
 import tensorflow as tf
 
-from utils.serialization_utils import convert_json
+from common.serialization_utils import convert_json
 from deepq.replay.circular_replay_buffer import WrappedReplayBuffer
 from deepq.replay.prioritized_replay_buffer import WrappedProportionalReplayBuffer
 

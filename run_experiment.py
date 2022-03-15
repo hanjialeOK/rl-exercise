@@ -5,7 +5,7 @@ import time
 from argparse import ArgumentParser
 from collections import namedtuple
 
-from utils.serialization_utils import convert_json, save_config
+from common.serialization_utils import convert_json, save_config
 from deepq.agents.dqn import *
 from deepq.agents.rainbow import *
 from deepq.env.atari_lib import create_atari_environment
