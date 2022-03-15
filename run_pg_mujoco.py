@@ -4,12 +4,14 @@ import gym
 import time
 import os
 import argparse
+import collections
 
 import pg.agents.vpg as VPG
 import pg.agents.trpo as TRPO
 import pg.agents.ppo as PPO
 import pg.agents.ppo2 as PPO2
 import pg.agents.ppo_m as PPOM
+import common.vec_normalize as Wrapper
 
 from termcolor import cprint, colored
 from utils.serialization_utils import convert_json, save_json
@@ -19,27 +21,31 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 EPS = 1e-8
 
 
-def evaluate(env_eval, agent, num_ep=10, max_ep_len=10000):
+def evaluate(env_eval, agent, n_eval_episodes=10):
     ret_sum = 0.
     len_sum = 0
 
-    for i in range(1, num_ep + 1):
+    for i in range(1, n_eval_episodes + 1):
         obs = env_eval.reset()
         ep_ret = 0.
         ep_len = 0
         while True:
-            ac = agent.select_action(obs)
+            ac = agent.select_action(obs, deterministic=False)
             obs, reward, done, _ = env_eval.step(ac)
+            # if isinstance(obs, np.ndarray):
+            #     obs = obs[0]
+            #     reward = reward[0]
+            #     done = done[0]
             ep_ret += reward
             ep_len += 1
-            if done or ep_len >= max_ep_len:
-                cprint(f'\rEvaluate: {i}/{num_ep}',
+            if done:
+                cprint(f'\rEvaluate: {i}/{n_eval_episodes}',
                        color='cyan', attrs=['bold'], end='')
                 ret_sum += ep_ret
                 len_sum += ep_len
                 break
-    avg_eval_ret = ret_sum / num_ep
-    avg_eval_len = len_sum / num_ep
+    avg_eval_ret = ret_sum / n_eval_episodes
+    avg_eval_len = len_sum / n_eval_episodes
     cprint(f'\navg_eval_len: {ep_len}, avg_eval_ret: {ep_ret:.1f}',
            color='cyan', attrs=['bold'])
 
@@ -48,7 +54,8 @@ def evaluate(env_eval, agent, num_ep=10, max_ep_len=10000):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dir_name', type=str, default=None, help='Dir name')
+    parser.add_argument('--dir_name', type=str,
+                        default='default', help='Dir name')
     parser.add_argument('--data_dir', type=str, default='/data/hanjl',
                         help='Data disk dir')
     parser.add_argument('--env_name', '--env', type=str,
@@ -60,16 +67,20 @@ def main():
                         help='Whether to eval agent')
     parser.add_argument('--save_model', action='store_true',
                         help='Whether to save model')
+    parser.add_argument('--total_steps', type=int, default=1e6,
+                        help='Total steps trained')
     args = parser.parse_args()
 
     if not os.path.exists(args.data_dir):
         raise
 
     timestamp = time.strftime("%Y-%m-%d-%H_%M_%S", time.localtime(time.time()))
-    dir_name = args.dir_name or (args.exp_name + '-' + timestamp)
+    base_name = args.exp_name + '-' + timestamp
+    dir_name = args.dir_name
     exp_name = args.exp_name
     env_name = args.env_name
-    base_dir = os.path.join(args.data_dir, f"my_results/{env_name}/{dir_name}")
+    base_dir = os.path.join(
+        args.data_dir, f"my_results/{env_name}/{dir_name}/{base_name}")
     if not os.path.exists(base_dir):
         os.makedirs(base_dir)
 
@@ -85,9 +96,11 @@ def main():
     checkpoint_dir = os.path.join(base_dir, 'checkpoints')
     if not os.path.exists(checkpoint_dir):
         os.makedirs(checkpoint_dir)
-    progress_txt = os.path.join(base_dir, 'progress.txt')
-    with open(progress_txt, 'w') as f:
-        f.write('Step\tValue\n')
+    train_txt = os.path.join(base_dir, 'train.txt')
+    eval_txt = os.path.join(base_dir, 'eval.txt')
+    with open(train_txt, 'w') as f1, open(eval_txt, 'w') as f2:
+        f1.write('Step\tAvgLength\tAvgReturn\n')
+        f2.write('Step\tAvgReturn\n')
 
     # Random seed
     seed = int(time.time()) % 1000
@@ -101,6 +114,15 @@ def main():
     env_eval.seed(seed)
     obs_dim = env.observation_space.shape
     act_dim = env.action_space.shape
+    max_action = float(env.action_space.high[0])
+
+    # Normalized rew and obs
+    env = Wrapper.VecNormalize(env)
+    env_eval = Wrapper.VecNormalize(env_eval, ret=False)
+    # env = DummyVecEnv([lambda: gym.make(env_name)])
+    # env = VecNormalize(env, ob=True, ret=True)
+    # env_eval = DummyVecEnv([lambda: gym.make(env_name)])
+    # env_eval = VecNormalize(env_eval, ob=True, ret=False)
 
     # Tensorboard
     summary_writer = tf.compat.v1.summary.FileWriter(summary_dir)
@@ -128,7 +150,8 @@ def main():
     elif exp_name == 'TRPO':
         agent = TRPO.TRPOAgent(sess, obs_dim, act_dim, horizon=1000)
     elif exp_name == 'PPO':
-        agent = PPO.PPOAgent(sess, obs_dim, act_dim, horizon=1000)
+        agent = PPO.PPOAgent(sess, obs_dim, act_dim, horizon=1000,
+                             summary_writer=summary_writer)
     elif exp_name == 'PPOM':
         agent = PPOM.PPOAgent(sess, obs_dim, act_dim, horizon=1000)
     elif exp_name == 'PPO2':
@@ -139,67 +162,76 @@ def main():
     sess.run(tf.compat.v1.global_variables_initializer())
 
     # Params
-    total_steps = int(1e6)
+    total_steps = int(args.total_steps)
     horizon = agent.horizon
-    max_ep_len = 10000
     eval_freq = 10
 
     cprint(f'Running experiment: {exp_name}\n', color='cyan', attrs=['bold'])
 
     # Start
     start_time = time.time()
-    obs = env.reset()
-    ep_ret, ep_len = 0, 0
+    # obs = env.reset()
+    # ep_ret, ep_len = 0, 0
     ep_count = 0
     max_ep_ret = 0
+    ep_ret_buf = collections.deque(maxlen=100)
+    ep_len_buf = collections.deque(maxlen=100)
 
     epochs = total_steps // agent.horizon
     for epoch in range(1, epochs + 1):
+        obs = env.reset()
+        ep_ret, ep_len = 0, 0
         for t in range(1, horizon + 1):
             ac = agent.select_action(obs)
 
-            next_obs, reward, done, _ = env.step(ac)
-            ep_ret += reward
+            next_obs, reward, done, info = env.step(ac)
+            ep_ret += env.get_original_reward()
             ep_len += 1
 
             agent.store_transition(obs, ac, reward, done)
 
             obs = next_obs
 
-            if done or (ep_len >= max_ep_len):
-                # Episode summary
-                episode_summary = tf.compat.v1.Summary(value=[
-                    tf.compat.v1.Summary.Value(
-                        tag="episode_info/reward", simple_value=ep_ret),
-                    tf.compat.v1.Summary.Value(
-                        tag="episode_info/length", simple_value=ep_len)
-                ])
-                summary_writer.add_summary(episode_summary, ep_count)
-                ep_ret_text = colored(f'{ep_ret:.1f}',
-                                      color='green', attrs=['bold'])
-                print(f'Epoch: {epoch}/{epochs}, '
-                      f'ep_len: {ep_len}, ep_ret: {ep_ret_text}, '
-                      f'training {exp_name}: {epoch/epochs:.1%}')
+            if done:
+                ep_count += 1
+                ep_ret_buf.append(ep_ret)
+                ep_len_buf.append(ep_len)
                 # Episode restart
                 obs = env.reset()
                 ep_ret, ep_len = 0, 0
-                ep_count += 1
 
-            if t == horizon:
-                # if trajectory didn't reach terminal state, bootstrap value target
-                last_val = 0.0 if done else agent.compute_v(obs)
-                agent.buffer.finish_path(last_val)
-                break
+        # If trajectory didn't reach terminal state, bootstrap value target
+        last_val = 0.0 if done else agent.compute_v(obs)
+        agent.buffer.finish_path(last_val)
 
-        agent.update()
+        pi_loss, v_loss, entropy, kl = agent.update()
 
         # Steps we have trained.
         step = epoch * horizon
 
+        avg_ep_ret = np.mean(ep_ret_buf)
+        avg_ep_len = np.mean(ep_len_buf)
+        # Episode summary
+        train_summary = tf.compat.v1.Summary(value=[
+            tf.compat.v1.Summary.Value(
+                tag="train/avglen", simple_value=avg_ep_len),
+            tf.compat.v1.Summary.Value(
+                tag="train/avgret", simple_value=avg_ep_ret)
+        ])
+        summary_writer.add_summary(train_summary, step)
+        with open(train_txt, 'a') as f:
+            f.write(f"{step}\t{avg_ep_len}\t{avg_ep_ret}\n")
+        ep_ret_text = colored(f'{avg_ep_ret:.1f}',
+                              color='green', attrs=['bold'])
+        print(f'@Epoch: {epoch}/{epochs}, '
+              f'AvgLen: {avg_ep_len}, AvgRet: {ep_ret_text}, '
+              f'Algo {exp_name}: {epoch/epochs:.1%}\n'
+              f'pi_loss: {pi_loss:.4f}, v_loss: {v_loss:.4f}, '
+              f'entropy: {entropy:.4f}, kl: {kl:.4f}')
+
         # Evaluate
         if epoch % eval_freq == 0 and args.allow_eval:
-            avg_ret, evg_len = evaluate(
-                env_eval, agent, num_ep=10, max_ep_len=max_ep_len)
+            avg_ret, evg_len = evaluate(env_eval, agent)
             # Summary
             eval_summary = tf.compat.v1.Summary(value=[
                 tf.compat.v1.Summary.Value(
@@ -214,7 +246,7 @@ def main():
                 agent.bundle(checkpoint_dir, epoch)
                 max_ep_ret = avg_ret
             # Log data
-            with open(progress_txt, 'a') as f:
+            with open(eval_txt, 'a') as f:
                 f.write(f"{step}\t{avg_ret}\n")
 
     time_delta = int(time.time() - start_time)
