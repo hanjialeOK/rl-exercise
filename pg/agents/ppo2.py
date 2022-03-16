@@ -44,7 +44,7 @@ class PPOAgent():
                  train_iters=10, target_kl=0.01,
                  ent_coef=0.0, vf_coef=0.5, max_grad_norm=0.5,
                  horizon=2048, minibatch=64, gamma=0.99, lam=0.95,
-                 grad_clip=True, vf_clip=False):
+                 grad_clip=True, vf_clip=True):
         self.sess = sess
         self.obs_dim = obs_dim
         self.act_dim = act_dim
@@ -98,7 +98,7 @@ class PPOAgent():
             pi = dist.sample()
             logp_a = tf.reduce_sum(dist.log_prob(act_ph), axis=1)
             logp_pi = tf.reduce_sum(dist.log_prob(pi), axis=1)
-            entropy = dist.entropy()
+            entropy = tf.reduce_mean(dist.entropy())
 
         # State value
         with tf.variable_scope('v'):
@@ -127,9 +127,7 @@ class PPOAgent():
 
         # Info (useful to watch during learning)
         # a sample estimate for KL-divergence, easy to compute
-        approx_kl = tf.reduce_mean(logp_old_ph - logp_a)
-        # a sample estimate for entropy, also easy to compute
-        approx_ent = tf.reduce_mean(-logp_a)
+        approx_kl = 0.5 * tf.reduce_mean(tf.square(logp_old_ph - logp_a))
         clipped = tf.logical_or(
             ratio > (1 + self.clip_ratio), ratio < (1 - self.clip_ratio))
         clipfrac = tf.reduce_mean(tf.cast(clipped, tf.float32))
@@ -149,7 +147,7 @@ class PPOAgent():
             train_op = optimizer.minimize(loss)
         return [obs_ph, all_phs, get_action_ops,
                 v, pi_loss, v_loss,
-                approx_kl, approx_ent, clipfrac,
+                approx_kl, entropy, clipfrac,
                 train_op]
 
     def update(self):
