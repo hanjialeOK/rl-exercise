@@ -44,7 +44,7 @@ class PPOAgent():
                  train_iters=10, target_kl=0.01,
                  ent_coef=0.0, vf_coef=0.5, max_grad_norm=0.5,
                  horizon=2048, minibatch=64, gamma=0.99, lam=0.95,
-                 grad_clip=True):
+                 grad_clip=True, vf_clip=False):
         self.sess = sess
         self.obs_dim = obs_dim
         self.act_dim = act_dim
@@ -58,6 +58,7 @@ class PPOAgent():
         self.vf_coef = vf_coef
         self.max_grad_norm = max_grad_norm
         self.grad_clip = grad_clip
+        self.vf_clip = vf_clip
 
         self.buffer = Buffer.PPOBuffer(
             obs_dim, act_dim, size=horizon, gamma=gamma, lam=lam)
@@ -115,11 +116,14 @@ class PPOAgent():
             ratio, 1 - self.clip_ratio, 1 + self.clip_ratio)
         pi_loss = -tf.reduce_mean(tf.minimum(pi_loss1, pi_loss2))
 
-        valclipped = val_ph + \
-            tf.clip_by_value(v - val_ph, -self.clip_ratio, self.clip_ratio)
-        v_loss1 = tf.square(v - ret_ph)
-        v_loss2 = tf.square(valclipped - ret_ph)
-        v_loss = 0.5 * tf.reduce_mean(tf.maximum(v_loss1, v_loss2))
+        if self.vf_clip:
+            valclipped = val_ph + \
+                tf.clip_by_value(v - val_ph, -self.clip_ratio, self.clip_ratio)
+            v_loss1 = tf.square(v - ret_ph)
+            v_loss2 = tf.square(valclipped - ret_ph)
+            v_loss = 0.5 * tf.reduce_mean(tf.maximum(v_loss1, v_loss2))
+        else:
+            v_loss = 0.5 * tf.reduce_mean(tf.square(v - ret_ph))
 
         # Info (useful to watch during learning)
         # a sample estimate for KL-divergence, easy to compute
