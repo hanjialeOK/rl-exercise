@@ -78,7 +78,7 @@ Iteraion    Value   Unit    Condition
 """
 
 
-def get_datasets(logdir, legend=None, tag=None):
+def get_datasets(logdir, legend=None, tag=None, data_file='train.txt'):
     """
     Recursively look through logdir for output files produced by
     spinup.logx.Logger.
@@ -87,7 +87,7 @@ def get_datasets(logdir, legend=None, tag=None):
     global units
     datasets = []
     for root, _, files in os.walk(logdir):
-        if 'progress.txt' in files:
+        if data_file in files:
             exp_name = None
             try:
                 config_path = open(os.path.join(root, 'config.json'))
@@ -103,10 +103,10 @@ def get_datasets(logdir, legend=None, tag=None):
             units[condition] += 1
 
             try:
-                exp_data = pd.read_table(os.path.join(root, 'progress.txt'))
+                exp_data = pd.read_table(os.path.join(root, data_file))
             except:
                 print('Could not read from %s' %
-                      os.path.join(root, 'progress.txt'))
+                      os.path.join(root, data_file))
                 continue
             exp_data.insert(len(exp_data.columns), 'Unit', unit)
             exp_data.insert(len(exp_data.columns), 'Condition', condition)
@@ -133,12 +133,13 @@ def main(args):
     if args.legend:
         for logdir, legend in zip(logdirs, args.legend):
             datasets, cond = get_datasets(
-                logdir=logdir, legend=legend, tag=args.tag)
+                logdir=logdir, legend=legend, tag=args.tag, data_file=args.file)
             data += datasets
             print(f'{logdir} -> {cond}, {units[cond]}')
     else:
         for logdir in logdirs:
-            datasets, cond = get_datasets(logdir=logdir, tag=args.tag)
+            datasets, cond = get_datasets(
+                logdir=logdir, tag=args.tag, data_file=args.file)
             data += datasets
             print(f'{logdir} -> {cond}, {units[cond]}')
 
@@ -169,6 +170,7 @@ if __name__ == "__main__":
     parser.add_argument('--value', '-y', default='Value')
     parser.add_argument('--smooth', '-s', type=int, default=1)
     parser.add_argument('--tag', type=str, default='exp_name')
+    parser.add_argument('--file', type=str, default='train.txt')
     parser.add_argument('--name', type=str, default='exp')
     args = parser.parse_args()
     main(args)
