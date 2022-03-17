@@ -7,7 +7,7 @@ import pg.buffer.vpgbuffer as Buffer
 
 
 def Actor(obs, ac_dim):
-    activation_fn = tf.tanh
+    activation_fn = tf.nn.relu
     kernel_initializer = None
     x = tf.compat.v1.layers.dense(
         obs, units=64, activation=activation_fn,
@@ -25,7 +25,7 @@ def Actor(obs, ac_dim):
 
 
 def Critic(obs):
-    activation_fn = tf.tanh
+    activation_fn = tf.nn.relu
     kernel_initializer = None
     x = tf.compat.v1.layers.dense(
         obs, units=64, activation=activation_fn,
@@ -44,7 +44,7 @@ class PPOAgent():
                  train_iters=10, target_kl=0.01,
                  ent_coef=0.0, vf_coef=0.5, max_grad_norm=0.5,
                  horizon=2048, minibatch=64, gamma=0.99, lam=0.95,
-                 grad_clip=True, vf_clip=True):
+                 grad_clip=True, vf_clip=False):
         self.sess = sess
         self.obs_dim = obs_dim
         self.act_dim = act_dim
