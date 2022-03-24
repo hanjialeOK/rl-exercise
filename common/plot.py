@@ -103,7 +103,10 @@ def get_datasets(logdir, legend=None, tag=None, data_file='train.txt'):
             units[condition] += 1
 
             try:
-                exp_data = pd.read_table(os.path.join(root, data_file))
+                if '.txt' in data_file:
+                    exp_data = pd.read_table(os.path.join(root, data_file))
+                elif '.csv' in data_file:
+                    exp_data = pd.read_csv(os.path.join(root, data_file))
             except:
                 print('Could not read from %s' %
                       os.path.join(root, data_file))
