@@ -10,16 +10,12 @@ class VecNormalize():
     def __init__(self, env, ob=True, ret=True, clipob=10., cliprew=10.,
                  gamma=0.99, epsilon=1e-8, use_tf=False):
         if use_tf:
-            from common.running_mean_std import TfRunningMeanStd
-            self.ob_rms = TfRunningMeanStd(
-                shape=env.observation_space.shape, scope='ob_rms') if ob else None
-            self.ret_rms = TfRunningMeanStd(
-                shape=(), scope='ret_rms') if ret else None
+            raise NotImplementedError
         else:
-            from common.running_mean_std import RunningMeanStd
-            self.ob_rms = RunningMeanStd(
+            from common.running_mean_std import RunningMeanStd2
+            self.ob_rms = RunningMeanStd2(
                 shape=env.observation_space.shape) if ob else None
-            self.ret_rms = RunningMeanStd(shape=()) if ret else None
+            self.ret_rms = RunningMeanStd2(shape=()) if ret else None
         self.env = env
         self.clipob = clipob
         self.cliprew = cliprew
@@ -27,36 +23,47 @@ class VecNormalize():
         self.raw_rew = 0.
         self.gamma = gamma
         self.epsilon = epsilon
+        self.ep_ret = 0.0
+        self.ep_len = 0
 
     def step(self, action):
-        obs, rew, new, info = self.env.step(action)
-        self.raw_rew = rew
+        obs, rew, done, info = self.env.step(action)
+        # Episode info
+        self.ep_ret += rew
+        self.ep_len += 1
+        # Discounted ret
         self.ret = self.ret * self.gamma + rew
+        # Normalized obs
         obs = self._obfilt(obs)
-        if self.ret_rms:
-            self.ret_rms.update(np.array([self.ret]))
-            rew = np.clip(rew / np.sqrt(self.ret_rms.var + self.epsilon),
-                          -self.cliprew, self.cliprew)
-        if new:
+        rew = self._rewfilt(rew)
+        if done:
+            epinfo = {'r': self.ep_ret, 'l': self.ep_len}
+            info['episode'] = epinfo
+            self.ep_ret = 0.
+            self.ep_len = 0
             self.ret = 0.
-        return obs, rew, new, info
+        return obs, rew, done, info
 
     def _obfilt(self, obs):
         if self.ob_rms:
             self.ob_rms.update(obs)
             obs = np.clip((obs - self.ob_rms.mean) / np.sqrt(self.ob_rms.var + self.epsilon),
                           -self.clipob, self.clipob)
-            return obs
-        else:
-            return obs
+        return obs
+
+    def _rewfilt(self, rew):
+        if self.ret_rms:
+            self.ret_rms.update(self.ret)
+            rew = np.clip(rew / np.sqrt(self.ret_rms.var + self.epsilon),
+                          -self.cliprew, self.cliprew)
+        return rew
 
     def reset(self):
         self.ret = 0.
+        self.ep_ret = 0.
+        self.ep_len = 0
         obs = self.env.reset()
         return self._obfilt(obs)
-
-    def get_original_reward(self):
-        return self.raw_rew
 
     @property
     def observation_space(self):
