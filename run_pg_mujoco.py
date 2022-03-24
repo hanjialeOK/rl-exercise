@@ -13,12 +13,13 @@ import pg.agents.ppo2 as PPO2
 import pg.agents.ppo_m as PPOM
 import common.vec_normalize as Wrapper
 
+from baselines.common.cmd_util import make_vec_env
+from baselines.common.vec_env import VecNormalize
+
 from termcolor import cprint, colored
 from common.serialization_utils import convert_json, save_json
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-
-EPS = 1e-8
 
 
 def evaluate(env_eval, agent, n_eval_episodes=10):
@@ -58,9 +59,9 @@ def main():
                         default='default', help='Dir name')
     parser.add_argument('--data_dir', type=str, default='/data/hanjl',
                         help='Data disk dir')
-    parser.add_argument('--env_name', '--env', type=str,
-                        default='HalfCheetah-v2')
-    parser.add_argument('--exp_name', type=str, default='PPO',
+    parser.add_argument('--env', type=str,
+                        default='Walker2d-v2')
+    parser.add_argument('--alg', type=str, default='PPO',
                         choices=['VPG', 'TRPO', 'PPO', 'PPO2', 'PPOM'],
                         help='Experiment name',)
     parser.add_argument('--allow_eval', action='store_true',
@@ -75,10 +76,10 @@ def main():
         raise
 
     timestamp = time.strftime("%Y-%m-%d-%H_%M_%S", time.localtime(time.time()))
-    base_name = args.exp_name + '-' + timestamp
+    base_name = args.alg + '-' + timestamp
     dir_name = args.dir_name
-    exp_name = args.exp_name
-    env_name = args.env_name
+    exp_name = args.alg
+    env_name = args.env
     base_dir = os.path.join(
         args.data_dir, f"my_results/{env_name}/{dir_name}/{base_name}")
     if not os.path.exists(base_dir):
@@ -117,12 +118,11 @@ def main():
     max_action = float(env.action_space.high[0])
 
     # Normalized rew and obs
-    env = Wrapper.VecNormalize(env)
-    env_eval = Wrapper.VecNormalize(env_eval, ret=False)
-    # env = DummyVecEnv([lambda: gym.make(env_name)])
-    # env = VecNormalize(env, ob=True, ret=True)
-    # env_eval = DummyVecEnv([lambda: gym.make(env_name)])
-    # env_eval = VecNormalize(env_eval, ob=True, ret=False)
+    # env = Wrapper.VecNormalize(env)
+    # env_eval = Wrapper.VecNormalize(env_eval, ret=False)
+    env = make_vec_env(env_name, 'mujoco', 1, seed,
+                       reward_scale=1.0, flatten_dict_observations=True)
+    env = VecNormalize(env, use_tf=False)
 
     # Tensorboard
     summary_writer = tf.compat.v1.summary.FileWriter(summary_dir)
@@ -145,19 +145,19 @@ def main():
            f'{gpu_list}\n',
            color='cyan', attrs=['bold'])
 
-    if exp_name == 'VPG':
+    if args.alg == 'VPG':
         agent = VPG.VPGAgent(sess, obs_dim, act_dim, horizon=1000)
-    elif exp_name == 'TRPO':
+    elif args.alg == 'TRPO':
         agent = TRPO.TRPOAgent(sess, obs_dim, act_dim, horizon=1000)
-    elif exp_name == 'PPO':
-        agent = PPO.PPOAgent(sess, obs_dim, act_dim, horizon=1000,
+    elif args.alg == 'PPO':
+        agent = PPO.PPOAgent(sess, obs_dim, act_dim, horizon=2048,
                              summary_writer=summary_writer)
-    elif exp_name == 'PPOM':
+    elif args.alg == 'PPOM':
         agent = PPOM.PPOAgent(sess, obs_dim, act_dim, horizon=1000)
-    elif exp_name == 'PPO2':
+    elif args.alg == 'PPO2':
         agent = PPO2.PPOAgent(sess, obs_dim, act_dim, horizon=2048)
     else:
-        raise ValueError('Unknown agent: {}'.format(exp_name))
+        raise ValueError('Unknown agent: {}'.format(args.alg))
 
     sess.run(tf.compat.v1.global_variables_initializer())
 
@@ -166,12 +166,12 @@ def main():
     horizon = agent.horizon
     eval_freq = 10
 
-    cprint(f'Running experiment: {exp_name}\n', color='cyan', attrs=['bold'])
+    cprint(f'Running experiment: {args.alg}\n', color='cyan', attrs=['bold'])
 
     # Start
     start_time = time.time()
-    # obs = env.reset()
-    # ep_ret, ep_len = 0, 0
+    obs = env.reset()
+    ep_ret, ep_len = 0.0, 0
     ep_count = 0
     max_ep_ret = 0
     ep_ret_buf = collections.deque(maxlen=100)
@@ -179,44 +179,64 @@ def main():
 
     epochs = total_steps // agent.horizon
     for epoch in range(1, epochs + 1):
-        obs = env.reset()
-        ep_ret, ep_len = 0, 0
+        # obs = env.reset()
+        # ep_ret, ep_len = 0.0, 0
         for t in range(1, horizon + 1):
             ac = agent.select_action(obs)
 
             next_obs, reward, done, info = env.step(ac)
-            ep_ret += env.get_original_reward()
-            ep_len += 1
+            if isinstance(done, np.ndarray):
+                next_obs = next_obs[0]
+                reward = reward[0]
+                done = done[0]
+                info = info[0]
 
-            agent.store_transition(obs, ac, reward, done)
+                # ep_ret += reward
+                # ep_ret += env.get_original_reward()
+                # ep_len += 1
 
-            obs = next_obs
+                agent.store_transition(obs, ac, reward, done)
 
-            if done:
-                ep_count += 1
-                ep_ret_buf.append(ep_ret)
-                ep_len_buf.append(ep_len)
-                # Episode restart
-                obs = env.reset()
-                ep_ret, ep_len = 0, 0
+                obs = next_obs
+
+                if done:
+                    ep_count += 1
+                    ep_ret = info['episode']['r']
+                    ep_len = info['episode']['l']
+                    ep_ret_buf.append(ep_ret)
+                    ep_len_buf.append(ep_len)
+                    # Episode restart
+                    obs = env.reset()
+                    ep_ret, ep_len = 0.0, 0
 
         # If trajectory didn't reach terminal state, bootstrap value target
-        last_val = 0.0 if done else agent.compute_v(obs)
+        last_val = agent.compute_v(obs)
         agent.buffer.finish_path(last_val)
 
-        pi_loss, v_loss, entropy, kl = agent.update()
+        frac = 1.0 - (epoch - 1.0) / epochs
+
+        pi_loss, v_loss, entropy, kl = agent.update(frac)
 
         # Steps we have trained.
         step = epoch * horizon
 
         avg_ep_ret = np.mean(ep_ret_buf)
         avg_ep_len = np.mean(ep_len_buf)
+
         # Episode summary
         train_summary = tf.compat.v1.Summary(value=[
             tf.compat.v1.Summary.Value(
                 tag="train/avglen", simple_value=avg_ep_len),
             tf.compat.v1.Summary.Value(
-                tag="train/avgret", simple_value=avg_ep_ret)
+                tag="train/avgret", simple_value=avg_ep_ret),
+            tf.compat.v1.Summary.Value(
+                tag="loss/avgkl", simple_value=kl),
+            tf.compat.v1.Summary.Value(
+                tag="loss/avgpiloss", simple_value=pi_loss),
+            tf.compat.v1.Summary.Value(
+                tag="loss/avgvloss", simple_value=v_loss),
+            tf.compat.v1.Summary.Value(
+                tag="loss/avgentropy", simple_value=entropy)
         ])
         summary_writer.add_summary(train_summary, step)
         with open(train_txt, 'a') as f:
@@ -225,7 +245,7 @@ def main():
                               color='green', attrs=['bold'])
         print(f'@Epoch: {epoch}/{epochs}, '
               f'AvgLen: {avg_ep_len}, AvgRet: {ep_ret_text}, '
-              f'Algo {exp_name}: {epoch/epochs:.1%}\n'
+              f'Algo {args.alg}: {epoch/epochs:.1%}\n'
               f'pi_loss: {pi_loss:.4f}, v_loss: {v_loss:.4f}, '
               f'entropy: {entropy:.4f}, kl: {kl:.4f}')
 

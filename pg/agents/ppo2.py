@@ -6,45 +6,62 @@ import os
 import pg.buffer.vpgbuffer as Buffer
 
 
-def Actor(obs, ac_dim):
-    activation_fn = tf.nn.relu
-    kernel_initializer = None
-    x = tf.compat.v1.layers.dense(
-        obs, units=64, activation=activation_fn,
-        kernel_initializer=kernel_initializer, name='fc1')
-    x = tf.compat.v1.layers.dense(
-        x, units=64, activation=activation_fn,
-        kernel_initializer=kernel_initializer, name='fc2')
-    mu = tf.compat.v1.layers.dense(
-        x, units=ac_dim[0], activation=None,
-        kernel_initializer=kernel_initializer, name='fc3')
-    logstd = tf.compat.v1.get_variable(
-        name='logstd',
-        initializer=-0.5 * np.ones(ac_dim, dtype=np.float32))
-    return mu, logstd
+def tf_ortho_init(scale):
+    return tf.keras.initializers.Orthogonal(scale)
 
 
-def Critic(obs):
-    activation_fn = tf.nn.relu
-    kernel_initializer = None
-    x = tf.compat.v1.layers.dense(
-        obs, units=64, activation=activation_fn,
-        kernel_initializer=kernel_initializer, name='fc1')
-    x = tf.compat.v1.layers.dense(
-        x, units=64, activation=activation_fn,
-        kernel_initializer=kernel_initializer, name='fc2')
-    x = tf.compat.v1.layers.dense(
-        x, units=1, activation=None,
-        kernel_initializer=kernel_initializer, name='fc3')
-    return tf.squeeze(x, axis=1)
+class ActorMLP(tf.keras.Model):
+    def __init__(self, ac_dim, name=None):
+        super(ActorMLP, self).__init__(name=name)
+        activation_fn = tf.keras.activations.tanh
+        kernel_initializer = None
+        self.dense1 = tf.keras.layers.Dense(
+            64, activation=activation_fn,
+            kernel_initializer=tf_ortho_init(np.sqrt(2)), name='fc1')
+        self.dense2 = tf.keras.layers.Dense(
+            64, activation=activation_fn,
+            kernel_initializer=tf_ortho_init(np.sqrt(2)), name='fc2')
+        self.dense3 = tf.keras.layers.Dense(
+            ac_dim[0], activation=None,
+            kernel_initializer=tf_ortho_init(0.01), name='fc3')
+
+    def call(self, state):
+        x = tf.cast(state, tf.float32)
+        x = self.dense1(x)
+        x = self.dense2(x)
+        x = self.dense3(x)
+        return x
+
+
+class CriticMLP(tf.keras.Model):
+    def __init__(self, name=None):
+        super(CriticMLP, self).__init__(name=name)
+        activation_fn = tf.keras.activations.tanh
+        kernel_initializer = None
+        self.dense1 = tf.keras.layers.Dense(
+            64, activation=activation_fn,
+            kernel_initializer=tf_ortho_init(np.sqrt(2)), name='fc1')
+        self.dense2 = tf.keras.layers.Dense(
+            64, activation=activation_fn,
+            kernel_initializer=tf_ortho_init(np.sqrt(2)), name='fc2')
+        self.dense3 = tf.keras.layers.Dense(
+            1, activation=None,
+            kernel_initializer=tf_ortho_init(1.0), name='fc3')
+
+    def call(self, state):
+        x = tf.cast(state, tf.float32)
+        x = self.dense1(x)
+        x = self.dense2(x)
+        x = self.dense3(x)
+        return tf.squeeze(x, axis=1)
 
 
 class PPOAgent():
-    def __init__(self, sess, obs_dim, act_dim, clip_ratio=0.2, lr=3e-4,
-                 train_iters=10, target_kl=0.01,
+    def __init__(self, sess, obs_dim, act_dim, clip_ratio=0.2,
+                 lr=3e-4, train_iters=10, target_kl=0.01,
                  ent_coef=0.0, vf_coef=0.5, max_grad_norm=0.5,
                  horizon=2048, minibatch=64, gamma=0.99, lam=0.95,
-                 grad_clip=True, vf_clip=False):
+                 grad_clip=True, vf_clip=True):
         self.sess = sess
         self.obs_dim = obs_dim
         self.act_dim = act_dim
@@ -62,10 +79,8 @@ class PPOAgent():
 
         self.buffer = Buffer.PPOBuffer(
             obs_dim, act_dim, size=horizon, gamma=gamma, lam=lam)
-        [self.obs_ph, self.all_phs, self.get_action_ops,
-         self.v, self.pi_loss, self.v_loss,
-         self.approx_kl, self.approx_ent, self.clipfrac,
-         self.train_op] = self._build_train_op()
+        self._build_network()
+        self._build_train_op()
         self.saver = self._build_saver()
 
     # Note: Required to be called after _build_train_op(), otherwise return []
@@ -76,45 +91,61 @@ class PPOAgent():
             scope=os.path.join(scope, name))
         return vars
 
+    def _build_network(self):
+        self.actor = ActorMLP(self.act_dim, name='pi')
+        self.critic = CriticMLP(name='vf')
+
     def _build_train_op(self):
+        ob1_ph = tf.compat.v1.placeholder(
+            shape=(1, ) + self.obs_dim, dtype=tf.float32, name="ob1_ph")
         obs_ph = tf.compat.v1.placeholder(
-            shape=(None, ) + self.obs_dim, dtype=tf.float32, name="obs_ph")
+            shape=(self.minibatch, ) + self.obs_dim, dtype=tf.float32, name="obs_ph")
         act_ph = tf.compat.v1.placeholder(
-            shape=(None, ) + self.act_dim, dtype=tf.float32, name="act_ph")
+            shape=(self.minibatch, ) + self.act_dim, dtype=tf.float32, name="act_ph")
         adv_ph = tf.compat.v1.placeholder(
-            shape=[None, ], dtype=tf.float32, name="adv_ph")
+            shape=[self.minibatch, ], dtype=tf.float32, name="adv_ph")
         ret_ph = tf.compat.v1.placeholder(
-            shape=[None, ], dtype=tf.float32, name="ret_ph")
+            shape=[self.minibatch, ], dtype=tf.float32, name="ret_ph")
         logp_old_ph = tf.compat.v1.placeholder(
-            shape=[None, ], dtype=tf.float32, name="logp_old_ph")
+            shape=[self.minibatch, ], dtype=tf.float32, name="logp_old_ph")
         val_ph = tf.compat.v1.placeholder(
-            shape=[None, ], dtype=tf.float32, name="val_ph")
+            shape=[self.minibatch, ], dtype=tf.float32, name="val_ph")
+        lr_ph = tf.compat.v1.placeholder(
+            shape=[], dtype=tf.float32, name="lr_ph")
+
+        all_phs = [obs_ph, act_ph, adv_ph, ret_ph, logp_old_ph, val_ph, lr_ph]
 
         # Probability distribution
-        with tf.variable_scope('pi'):
-            mu, logstd = Actor(obs_ph, self.act_dim)
-            std = tf.exp(logstd)
-            dist = tfp.distributions.Normal(loc=mu, scale=std)
-            pi = dist.sample()
-            logp_a = tf.reduce_sum(dist.log_prob(act_ph), axis=1)
-            logp_pi = tf.reduce_sum(dist.log_prob(pi), axis=1)
-            entropy = tf.reduce_mean(dist.entropy())
+        logstd = tf.compat.v1.get_variable(
+            name='pi/logstd', shape=(1, self.act_dim[0]),
+            initializer=tf.zeros_initializer)
+        std = tf.exp(logstd)
 
-        # State value
-        with tf.variable_scope('v'):
-            v = Critic(obs_ph)
+        # Interative with env
+        mu1 = self.actor(ob1_ph)
+        dist1 = tfp.distributions.Normal(loc=mu1, scale=std)
+        pi1 = dist1.sample()
+        logp_pi1 = tf.reduce_sum(dist1.log_prob(pi1), axis=1)
 
-        get_action_ops = [mu, pi, v, logp_pi]
+        v1 = self.critic(ob1_ph)
 
-        all_phs = [obs_ph, act_ph, adv_ph, ret_ph, logp_old_ph, val_ph]
+        get_action_ops = [mu1, pi1, v1, logp_pi1]
+
+        # Train batch data
+        mu = self.actor(obs_ph)
+        dist = tfp.distributions.Normal(loc=mu, scale=std)
+        logp_a = tf.reduce_sum(dist.log_prob(act_ph), axis=1)
+        entropy = tf.reduce_mean(dist.entropy())
+
+        v = self.critic(obs_ph)
 
         # PPO objectives
         # pi(a|s) / pi_old(a|s), should be one at the first iteration
         ratio = tf.exp(logp_a - logp_old_ph)
-        pi_loss1 = adv_ph * ratio
-        pi_loss2 = adv_ph * tf.clip_by_value(
-            ratio, 1 - self.clip_ratio, 1 + self.clip_ratio)
-        pi_loss = -tf.reduce_mean(tf.minimum(pi_loss1, pi_loss2))
+        pi_loss1 = -adv_ph * ratio
+        pi_loss2 = -adv_ph * tf.clip_by_value(
+            ratio, 1.0 - self.clip_ratio, 1.0 + self.clip_ratio)
+        pi_loss = tf.reduce_mean(tf.maximum(pi_loss1, pi_loss2))
 
         if self.vf_clip:
             valclipped = val_ph + \
@@ -129,28 +160,36 @@ class PPOAgent():
         # a sample estimate for KL-divergence, easy to compute
         approx_kl = 0.5 * tf.reduce_mean(tf.square(logp_old_ph - logp_a))
         clipped = tf.logical_or(
-            ratio > (1 + self.clip_ratio), ratio < (1 - self.clip_ratio))
+            ratio > (1.0 + self.clip_ratio), ratio < (1.0 - self.clip_ratio))
         clipfrac = tf.reduce_mean(tf.cast(clipped, tf.float32))
 
         # Total loss
         loss = pi_loss - entropy * self.ent_coef + v_loss * self.vf_coef
 
         # Optimizers
-        optimizer = tf.compat.v1.train.AdamOptimizer(
-            learning_rate=self.lr, epsilon=1e-5)
+        optimizer = tf.train.AdamOptimizer(learning_rate=lr_ph, epsilon=1e-5)
+        params = self._get_var_list('pi') + self._get_var_list('vf')
+        grads_and_vars = optimizer.compute_gradients(loss, var_list=params)
+        grads, vars = zip(*grads_and_vars)
         if self.grad_clip:
-            grads_and_vars = optimizer.compute_gradients(loss)
-            capped_grads_and_vars = [(tf.clip_by_norm(grad, self.max_grad_norm), var)
-                                     for grad, var in grads_and_vars]
-            train_op = optimizer.apply_gradients(capped_grads_and_vars)
-        else:
-            train_op = optimizer.minimize(loss)
-        return [obs_ph, all_phs, get_action_ops,
-                v, pi_loss, v_loss,
-                approx_kl, entropy, clipfrac,
-                train_op]
+            grads, _grad_norm = tf.clip_by_global_norm(
+                grads, self.max_grad_norm)
+        grads_and_vars = list(zip(grads, vars))
 
-    def update(self):
+        train_op = optimizer.apply_gradients(grads_and_vars)
+
+        self.ob1_ph = ob1_ph
+        self.all_phs = all_phs
+        self.get_action_ops = get_action_ops
+        self.v1 = v1
+        self.pi_loss = pi_loss
+        self.v_loss = v_loss
+        self.approx_kl = approx_kl
+        self.entropy = entropy
+        self.clipfrac = clipfrac
+        self.train_op = train_op
+
+    def update(self, frac):
         buf_data = self.buffer.get()
 
         pi_loss_buf = []
@@ -167,11 +206,23 @@ class PPOAgent():
                 end = start + self.minibatch
                 mbinds = indices[start:end]
                 slices = [arr[mbinds] for arr in buf_data]
-                inputs = {k: v for k, v in zip(self.all_phs, slices)}
+                [obs, actions, advs, rets, logprobs, values] = slices
+                # advs_raw = rets - values
+                advs = (advs - np.mean(advs)) / \
+                    (np.std(advs) + 1e-8)
+                inputs = {
+                    self.all_phs[0]: obs,
+                    self.all_phs[1]: actions,
+                    self.all_phs[2]: advs,
+                    self.all_phs[3]: rets,
+                    self.all_phs[4]: logprobs,
+                    self.all_phs[5]: values,
+                    self.all_phs[6]: frac * self.lr,
+                }
 
                 pi_loss, v_loss, entropy, kl, _ = self.sess.run(
                     [self.pi_loss, self.v_loss,
-                     self.approx_ent, self.approx_kl,
+                     self.entropy, self.approx_kl,
                      self.train_op],
                     feed_dict=inputs)
                 pi_loss_buf.append(pi_loss)
@@ -184,25 +235,25 @@ class PPOAgent():
 
     def _build_saver(self):
         pi_params = self._get_var_list('pi')
-        vf_params = self._get_var_list('v')
+        vf_params = self._get_var_list('vf')
         return tf.compat.v1.train.Saver(var_list=pi_params + vf_params,
                                         max_to_keep=4)
 
     def select_action(self, obs, deterministic=False):
-        [mu, pi, v_t, logp_pi_t] = self.sess.run(
-            self.get_action_ops, feed_dict={self.obs_ph: obs.reshape(1, -1)})
-        self.extra_info = [v_t, logp_pi_t]
+        [mu, pi, v, logp_pi] = self.sess.run(
+            self.get_action_ops, feed_dict={self.ob1_ph: np.reshape(obs, (1, -1))})
+        self.extra_info = [v[0], logp_pi[0]]
         ac = mu[0] if deterministic else pi[0]
-        return ac
+        return pi
 
     def compute_v(self, obs):
         return self.sess.run(
-            self.v, feed_dict={self.obs_ph: obs.reshape(1, -1)})
+            self.v1, feed_dict={self.ob1_ph: np.reshape(obs, (1, -1))})[0]
 
     def store_transition(self, obs, action, reward, done):
-        [v_t, logp_pi_t] = self.extra_info
+        [v, logp_pi] = self.extra_info
         self.buffer.store(obs, action, reward, done,
-                          v_t, logp_pi_t)
+                          v, logp_pi)
 
     def bundle(self, checkpoint_dir, iteration):
         if not os.path.exists(checkpoint_dir):

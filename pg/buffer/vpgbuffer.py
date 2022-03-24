@@ -55,7 +55,7 @@ class VPGBuffer:
 
 class PPOBuffer:
     def __init__(self, obs_dim, act_dim, size, gamma=0.99, lam=0.95):
-        self.obs_buf = np.zeros((size, ) + obs_dim, dtype=np.float32)
+        self.obs_buf = np.zeros((size, ) + obs_dim, dtype=np.float64)
         self.act_buf = np.zeros((size, ) + act_dim, dtype=np.float32)
         self.adv_buf = np.zeros(size, dtype=np.float32)
         self.rew_buf = np.zeros(size, dtype=np.float32)
@@ -81,26 +81,27 @@ class PPOBuffer:
 
     def finish_path(self, last_val=0.):
         assert self.ptr == self.max_size
-        rews = np.append(self.rew_buf, last_val)
         vals = np.append(self.val_buf, last_val)
 
         # the next two" lines implement GAE-Lambda advantage calculation
         lastgaelam = 0.0
-        lastret = rews[-1]
         for t in reversed(range(self.ptr)):
             nondone = 1.0 - self.done_buf[t]
-            delta = rews[t] + self.gamma * nondone * vals[t + 1] - vals[t]
+            delta = self.rew_buf[t] + self.gamma * \
+                nondone * vals[t + 1] - vals[t]
             self.adv_buf[t] = lastgaelam = delta + \
                 self.gamma * self.lam * nondone * lastgaelam
-            self.ret_buf[t] = lastret = rews[t] + \
-                self.gamma * nondone * lastret
+            # self.ret_buf[t] = lastret = rews[t] + \
+            #     self.gamma * nondone * lastret
+        self.ret_buf = self.adv_buf + self.val_buf
+        pass
 
     def get(self):
         assert self.ptr == self.max_size
         self.ptr = 0
         # the next two lines implement the advantage normalization trick
-        self.adv_buf = (self.adv_buf - np.mean(self.adv_buf)) / \
-            (np.std(self.adv_buf) + EPS)
+        # self.adv_buf = (self.adv_buf - np.mean(self.adv_buf)) / \
+        #     (np.std(self.adv_buf) + EPS)
         return [self.obs_buf, self.act_buf, self.adv_buf,
                 self.ret_buf, self.logp_buf, self.val_buf]
 
