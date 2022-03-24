@@ -191,23 +191,23 @@ def main():
                 done = done[0]
                 info = info[0]
 
-                # ep_ret += reward
-                # ep_ret += env.get_original_reward()
-                # ep_len += 1
+            # ep_ret += reward
+            # ep_ret += env.get_original_reward()
+            # ep_len += 1
 
-                agent.store_transition(obs, ac, reward, done)
+            agent.store_transition(obs, ac, reward, done)
 
-                obs = next_obs
+            obs = next_obs
 
-                if done:
-                    ep_count += 1
-                    ep_ret = info['episode']['r']
-                    ep_len = info['episode']['l']
-                    ep_ret_buf.append(ep_ret)
-                    ep_len_buf.append(ep_len)
-                    # Episode restart
-                    obs = env.reset()
-                    ep_ret, ep_len = 0.0, 0
+            if done:
+                ep_count += 1
+                ep_ret = info['episode']['r']
+                ep_len = info['episode']['l']
+                ep_ret_buf.append(ep_ret)
+                ep_len_buf.append(ep_len)
+                # Episode restart
+                obs = env.reset()
+                ep_ret, ep_len = 0.0, 0
 
         # If trajectory didn't reach terminal state, bootstrap value target
         last_val = agent.compute_v(obs)
