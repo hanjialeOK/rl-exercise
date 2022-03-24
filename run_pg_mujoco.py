@@ -13,9 +13,6 @@ import pg.agents.ppo2 as PPO2
 import pg.agents.ppo_m as PPOM
 import common.vec_normalize as Wrapper
 
-from baselines.common.cmd_util import make_vec_env
-from baselines.common.vec_env import VecNormalize
-
 from termcolor import cprint, colored
 from common.serialization_utils import convert_json, save_json
 
@@ -118,11 +115,11 @@ def main():
     max_action = float(env.action_space.high[0])
 
     # Normalized rew and obs
-    # env = Wrapper.VecNormalize(env)
-    # env_eval = Wrapper.VecNormalize(env_eval, ret=False)
-    env = make_vec_env(env_name, 'mujoco', 1, seed,
-                       reward_scale=1.0, flatten_dict_observations=True)
-    env = VecNormalize(env, use_tf=False)
+    env = Wrapper.VecNormalize(env)
+    env_eval = Wrapper.VecNormalize(env_eval, ret=False)
+    # env = make_vec_env(env_name, 'mujoco', 1, seed,
+    #                    reward_scale=1.0, flatten_dict_observations=True)
+    # env = VecNormalize(env, use_tf=False)
 
     # Tensorboard
     summary_writer = tf.compat.v1.summary.FileWriter(summary_dir)
