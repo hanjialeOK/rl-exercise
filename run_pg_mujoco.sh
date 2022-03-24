@@ -1,16 +1,17 @@
 # /bin/zsh
 ALGO=$1
-DIR_NAME=$2
+ENV=$2
+DIR_NAME=$3
 
-CUDA_VISIBLE_DEVICES=0 python run_pg_mujoco.py --exp_name ${ALGO} --allow_eval --dir_name ${DIR_NAME} > /dev/null &
-sleep 1
-CUDA_VISIBLE_DEVICES=0 python run_pg_mujoco.py --exp_name ${ALGO} --allow_eval --dir_name ${DIR_NAME} > /dev/null &
-sleep 1
-CUDA_VISIBLE_DEVICES=0 python run_pg_mujoco.py --exp_name ${ALGO} --allow_eval --dir_name ${DIR_NAME} > /dev/null &
-sleep 1
-CUDA_VISIBLE_DEVICES=1 python run_pg_mujoco.py --exp_name ${ALGO} --allow_eval --dir_name ${DIR_NAME} > /dev/null &
-sleep 1
-CUDA_VISIBLE_DEVICES=1 python run_pg_mujoco.py --exp_name ${ALGO} --allow_eval --dir_name ${DIR_NAME} > /dev/null &
-sleep 1
-CUDA_VISIBLE_DEVICES=1 python run_pg_mujoco.py --exp_name ${ALGO} --allow_eval --dir_name ${DIR_NAME} > /dev/null &
+CUDA_VISIBLE_DEVICES=0 python run_pg_mujoco.py --alg ${ALGO} --env ${ENV}  --dir_name ${DIR_NAME} > /dev/null &
+sleep 5
+CUDA_VISIBLE_DEVICES=0 python run_pg_mujoco.py --alg ${ALGO} --env ${ENV}  --dir_name ${DIR_NAME} > /dev/null &
+sleep 5
+CUDA_VISIBLE_DEVICES=0 python run_pg_mujoco.py --alg ${ALGO} --env ${ENV}  --dir_name ${DIR_NAME} > /dev/null &
+sleep 5
+CUDA_VISIBLE_DEVICES=1 python run_pg_mujoco.py --alg ${ALGO} --env ${ENV}  --dir_name ${DIR_NAME} > /dev/null &
+sleep 5
+CUDA_VISIBLE_DEVICES=1 python run_pg_mujoco.py --alg ${ALGO} --env ${ENV}  --dir_name ${DIR_NAME} > /dev/null &
+sleep 5
+CUDA_VISIBLE_DEVICES=1 python run_pg_mujoco.py --alg ${ALGO} --env ${ENV}  --dir_name ${DIR_NAME} > /dev/null &
 echo 'Running six experiments...'
