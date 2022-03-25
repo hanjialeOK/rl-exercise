@@ -135,9 +135,9 @@ def main():
     # DEBUG(0), INFO(1), WARNING(2), ERROR(3)
     # Combine os.environ['TF_CPP_MIN_LOG_LEVEL'] and tf.get_logger()
     tf.get_logger().setLevel('ERROR')
-    gpu_list = tf.config.experimental.list_physical_devices('GPU')
+    gpu_list = tf.compat.v1.config.experimental.list_physical_devices('GPU')
     cprint(f'Tensorflow version: {tf.__version__}, '
-           f'GPU Available: {tf.test.is_gpu_available()}, '
+           f'GPU available: {tf.test.is_gpu_available()}, '
            f'GPU count: {len(gpu_list)}\n'
            f'{gpu_list}\n',
            color='cyan', attrs=['bold'])
@@ -189,7 +189,6 @@ def main():
                 info = info[0]
 
             # ep_ret += reward
-            # ep_ret += env.get_original_reward()
             # ep_len += 1
 
             agent.store_transition(obs, ac, reward, done)
