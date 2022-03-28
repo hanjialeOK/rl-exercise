@@ -61,7 +61,7 @@ class PPOAgent():
                  lr=3e-4, train_iters=10, target_kl=0.01,
                  ent_coef=0.0, vf_coef=0.5, max_grad_norm=0.5,
                  horizon=2048, minibatch=64, gamma=0.99, lam=0.95,
-                 grad_clip=True, vf_clip=True):
+                 grad_clip=True, vf_clip=False, fixed_lr=False):
         self.sess = sess
         self.obs_dim = obs_dim
         self.act_dim = act_dim
@@ -76,6 +76,7 @@ class PPOAgent():
         self.max_grad_norm = max_grad_norm
         self.grad_clip = grad_clip
         self.vf_clip = vf_clip
+        self.fixed_lr = fixed_lr
 
         self.buffer = Buffer.PPOBuffer(
             obs_dim, act_dim, size=horizon, gamma=gamma, lam=lam)
@@ -210,6 +211,7 @@ class PPOAgent():
                 # advs_raw = rets - values
                 advs = (advs - np.mean(advs)) / \
                     (np.std(advs) + 1e-8)
+                lr = self.lr if self.fixed_lr else self.lr * frac
                 inputs = {
                     self.all_phs[0]: obs,
                     self.all_phs[1]: actions,
@@ -217,7 +219,7 @@ class PPOAgent():
                     self.all_phs[3]: rets,
                     self.all_phs[4]: logprobs,
                     self.all_phs[5]: values,
-                    self.all_phs[6]: frac * self.lr,
+                    self.all_phs[6]: lr,
                 }
 
                 pi_loss, v_loss, entropy, kl, _ = self.sess.run(
@@ -244,7 +246,7 @@ class PPOAgent():
             self.get_action_ops, feed_dict={self.ob1_ph: np.reshape(obs, (1, -1))})
         self.extra_info = [v[0], logp_pi[0]]
         ac = mu[0] if deterministic else pi[0]
-        return pi
+        return pi[0]
 
     def compute_v(self, obs):
         return self.sess.run(
