@@ -4,7 +4,7 @@ import random
 import tensorflow as tf
 from collections import namedtuple
 
-from deepq.agents.dqn import DQNAgent, WrappedAdamOptimizer
+from deepq.agents.dqn import DQNAgent
 
 C51NetworkType = namedtuple(
     'c51_network', ['q_values', 'logits', 'probabilities'])
@@ -88,7 +88,7 @@ class C51Agent(DQNAgent):
                  batch_size=32,
                  eval_mode=False,
                  max_tf_checkpoints_to_keep=4,
-                 optimizer=WrappedAdamOptimizer(
+                 optimizer=tf.compat.v1.train.AdamOptimizer(
                      learning_rate=0.00025,
                      epsilon=0.0003125),
                  summary_writer=None,
