@@ -94,11 +94,11 @@ def main():
     checkpoint_dir = os.path.join(base_dir, 'checkpoints')
     if not os.path.exists(checkpoint_dir):
         os.makedirs(checkpoint_dir)
-    train_txt = os.path.join(base_dir, 'train.txt')
+    progress_txt = os.path.join(base_dir, 'progress.txt')
     eval_txt = os.path.join(base_dir, 'eval.txt')
-    with open(train_txt, 'w') as f1, open(eval_txt, 'w') as f2:
-        f1.write('Step\tAvgLength\tAvgReturn\n')
-        f2.write('Step\tAvgReturn\n')
+    with open(progress_txt, 'w') as f1, open(eval_txt, 'w') as f2:
+        f1.write('Step\tAvgLength\tAvgEpRet\n')
+        f2.write('Step\tAvgEpRet\n')
 
     # Random seed
     seed = int(time.time()) % 1000
@@ -124,7 +124,6 @@ def main():
     # Tensorboard
     summary_writer = tf.compat.v1.summary.FileWriter(summary_dir)
 
-    # Experience buffer
     gpu_options = tf.compat.v1.GPUOptions(allow_growth=True)
     sess = tf.compat.v1.Session(
         config=tf.compat.v1.ConfigProto(
@@ -235,7 +234,7 @@ def main():
                 tag="loss/avgentropy", simple_value=entropy)
         ])
         summary_writer.add_summary(train_summary, step)
-        with open(train_txt, 'a') as f:
+        with open(progress_txt, 'a') as f:
             f.write(f"{step}\t{avg_ep_len}\t{avg_ep_ret}\n")
         ep_ret_text = colored(f'{avg_ep_ret:.1f}',
                               color='green', attrs=['bold'])
