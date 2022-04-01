@@ -31,8 +31,8 @@ def plot_data(data, xaxis='Epoch', value="AverageEpRet", condition="Condition", 
     if isinstance(data, list):
         data = pd.concat(data, ignore_index=True)
     sns.set(style="darkgrid", font_scale=1.5)
-    sns.tsplot(data=data, time=xaxis, value=value, unit="Unit",
-               condition=condition, ci='sd', **kwargs)
+    sns.lineplot(data=data, x=xaxis, y=value,
+                 hue=condition, ci=68, **kwargs)
     """
     If you upgrade to any version of Seaborn greater than 0.8.1, switch from
     tsplot to lineplot replacing L29 with:
@@ -78,7 +78,7 @@ Iteraion    Value   Unit    Condition
 """
 
 
-def get_datasets(logdir, legend=None, tag=None, data_file='train.txt'):
+def get_datasets(logdir, legend=None, tag=None, data_file='progress.txt'):
     """
     Recursively look through logdir for output files produced by
     spinup.logx.Logger.
@@ -87,7 +87,7 @@ def get_datasets(logdir, legend=None, tag=None, data_file='train.txt'):
     global units
     datasets = []
     for root, _, files in os.walk(logdir):
-        if data_file in files:
+        if ('progress.txt' in files) or ('progress.csv' in files):
             exp_name = None
             try:
                 config_path = open(os.path.join(root, 'config.json'))
@@ -103,10 +103,11 @@ def get_datasets(logdir, legend=None, tag=None, data_file='train.txt'):
             units[condition] += 1
 
             try:
-                if '.txt' in data_file:
-                    exp_data = pd.read_table(os.path.join(root, data_file))
-                elif '.csv' in data_file:
-                    exp_data = pd.read_csv(os.path.join(root, data_file))
+                if 'progress.txt' in files:
+                    exp_data = pd.read_table(
+                        os.path.join(root, 'progress.txt'))
+                elif 'progress.csv' in files:
+                    exp_data = pd.read_csv(os.path.join(root, 'progress.csv'))
             except:
                 print('Could not read from %s' %
                       os.path.join(root, data_file))
@@ -173,7 +174,7 @@ if __name__ == "__main__":
     parser.add_argument('--value', '-y', default='Value')
     parser.add_argument('--smooth', '-s', type=int, default=1)
     parser.add_argument('--tag', type=str, default='exp_name')
-    parser.add_argument('--file', type=str, default='train.txt')
+    parser.add_argument('--file', type=str, default='progress.txt')
     parser.add_argument('--name', type=str, default='exp')
     args = parser.parse_args()
     main(args)
