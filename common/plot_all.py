@@ -120,14 +120,17 @@ def get_datasets(logdir, legend=None, tag=None, data_file='progress.txt'):
 
 
 def main(args):
-    envs = ['Ant', 'HalfCheetah', 'Hopper', 'Humanoid', 'InvertedDoublePendulum',
-            'InvertedPendulum', 'Reacher', 'Swimmer', 'Walker2d']
+    envs = ['Ant', 'HalfCheetah', 'Hopper', 'Humanoid',
+            'InvertedDoublePendulum', 'InvertedPendulum', 'Reacher', 'Swimmer', 'Walker2d']
     algs = ['PPO-env', 'baselines-PPO']
     legends = ['PPO-ours', 'baselines-PPO']
     version = 'v2'
 
+    nsize = (2, 5)
+
     sns.set(style="darkgrid", palette="deep", font_scale=1.5)
-    fig, axis = plt.subplots(3, 3, figsize=(6.4*3, 4.8*3))
+    fig, axis = plt.subplots(nrows=nsize[0], ncols=nsize[1],
+                             figsize=(6.4*nsize[1], 4.8*nsize[0]))
 
     for i in range(len(envs)):
         env_name = envs[i] + '-' + version
@@ -163,7 +166,7 @@ def main(args):
         print('Plotting...')
 
         # Choose which subplot to plot
-        ax = axis[i // 3, i % 3]
+        ax = axis[i // nsize[1], i % nsize[1]]
 
         plot_data(data, xaxis=args.xaxis, value=args.value, condition='Condition',
                   smooth=args.smooth, ax=ax)
