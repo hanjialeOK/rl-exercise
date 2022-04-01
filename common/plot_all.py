@@ -30,8 +30,7 @@ def plot_data(data, xaxis='Epoch', value="AverageEpRet", condition="Condition", 
 
     if isinstance(data, list):
         data = pd.concat(data, ignore_index=True)
-    sns.set_theme(style="darkgrid", font_scale=1.5)
-    sns.set_style("darkgrid")
+    # sns.set(style="darkgrid", palette="deep", font_scale=1.5)
     sns.lineplot(data=data, x=xaxis, y=value, estimator='mean',
                  hue=condition, ci=68, ax=ax, **kwargs)
     """
@@ -123,10 +122,11 @@ def get_datasets(logdir, legend=None, tag=None, data_file='progress.txt'):
 def main(args):
     envs = ['Ant', 'HalfCheetah', 'Hopper', 'Humanoid', 'InvertedDoublePendulum',
             'InvertedPendulum', 'Reacher', 'Swimmer', 'Walker2d']
-    algs = ['PPO', 'PPO-env', 'baselines-PPO']
-    legends = ['PPO-ours', 'PPO-env', 'baselines-PPO']
+    algs = ['PPO-env', 'baselines-PPO']
+    legends = ['PPO-ours', 'baselines-PPO']
     version = 'v2'
 
+    sns.set(style="darkgrid", palette="deep", font_scale=1.5)
     fig, axis = plt.subplots(3, 3, figsize=(6.4*3, 4.8*3))
 
     for i in range(len(envs)):
