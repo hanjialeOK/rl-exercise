@@ -57,20 +57,21 @@ class CriticMLP(tf.keras.Model):
 
 
 class PPOAgent():
-    def __init__(self, sess, obs_dim, act_dim, clip_ratio=0.2,
-                 lr=3e-4, train_iters=10, target_kl=0.01,
+    def __init__(self, sess, obs_dim, act_dim, num_env=1,
+                 clip_ratio=0.2, lr=3e-4, train_iters=10, target_kl=0.01,
                  ent_coef=0.0, vf_coef=0.5, max_grad_norm=0.5,
                  horizon=2048, minibatch=64, gamma=0.99, lam=0.95,
-                 grad_clip=True, vf_clip=False, fixed_lr=False):
+                 grad_clip=True, vf_clip=True, fixed_lr=False):
         self.sess = sess
         self.obs_dim = obs_dim
         self.act_dim = act_dim
+        self.num_env = num_env
         self.clip_ratio = clip_ratio
         self.lr = lr
         self.train_iters = train_iters
         self.target_kl = target_kl
         self.horizon = horizon
-        self.minibatch = minibatch
+        self.minibatch = minibatch * num_env
         self.ent_coef = ent_coef
         self.vf_coef = vf_coef
         self.max_grad_norm = max_grad_norm
@@ -79,7 +80,7 @@ class PPOAgent():
         self.fixed_lr = fixed_lr
 
         self.buffer = Buffer.PPOBuffer(
-            obs_dim, act_dim, size=horizon, gamma=gamma, lam=lam)
+            obs_dim, act_dim, size=horizon, num_env=num_env, gamma=gamma, lam=lam)
         self._build_network()
         self._build_train_op()
         self.saver = self._build_saver()
@@ -98,7 +99,7 @@ class PPOAgent():
 
     def _build_train_op(self):
         ob1_ph = tf.compat.v1.placeholder(
-            shape=(1, ) + self.obs_dim, dtype=tf.float32, name="ob1_ph")
+            shape=(self.num_env, ) + self.obs_dim, dtype=tf.float32, name="ob1_ph")
         obs_ph = tf.compat.v1.placeholder(
             shape=(self.minibatch, ) + self.obs_dim, dtype=tf.float32, name="obs_ph")
         act_ph = tf.compat.v1.placeholder(
@@ -192,13 +193,14 @@ class PPOAgent():
 
     def update(self, frac):
         buf_data = self.buffer.get()
+        assert buf_data[0].shape[0] == self.horizon * self.num_env
 
         pi_loss_buf = []
         v_loss_buf = []
         entropy_buf = []
         kl_buf = []
 
-        indices = np.arange(self.horizon)
+        indices = np.arange(self.horizon * self.num_env)
         for _ in range(self.train_iters):
             # Randomize the indexes
             np.random.shuffle(indices)
@@ -243,31 +245,31 @@ class PPOAgent():
 
     def select_action(self, obs, deterministic=False):
         [mu, pi, v, logp_pi] = self.sess.run(
-            self.get_action_ops, feed_dict={self.ob1_ph: np.reshape(obs, (1, -1))})
-        self.extra_info = [v[0], logp_pi[0]]
-        ac = mu[0] if deterministic else pi[0]
-        return pi[0]
+            self.get_action_ops, feed_dict={self.ob1_ph: obs.reshape(self.num_env, -1)})
+        self.extra_info = [v, logp_pi]
+        ac = mu if deterministic else pi
+        return pi
 
     def compute_v(self, obs):
         return self.sess.run(
-            self.v1, feed_dict={self.ob1_ph: np.reshape(obs, (1, -1))})[0]
+            self.v1, feed_dict={self.ob1_ph: obs.reshape(self.num_env, -1)})
 
     def store_transition(self, obs, action, reward, done):
         [v, logp_pi] = self.extra_info
         self.buffer.store(obs, action, reward, done,
                           v, logp_pi)
 
-    def bundle(self, checkpoint_dir, iteration):
+    def bundle(self, checkpoint_dir, epoch):
         if not os.path.exists(checkpoint_dir):
             raise
         self.saver.save(
             self.sess,
             os.path.join(checkpoint_dir, 'tf_ckpt'),
-            global_step=iteration)
+            global_step=epoch)
 
-    def unbundle(self, checkpoint_dir, iteration=None):
+    def unbundle(self, checkpoint_dir, epoch=None):
         if not os.path.exists(checkpoint_dir):
             raise
         self.saver.restore(
             self.sess,
-            os.path.join(checkpoint_dir, f'tf_ckpt-{iteration}'))
+            os.path.join(checkpoint_dir, f'tf_ckpt-{epoch}'))

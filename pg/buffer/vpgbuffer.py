@@ -54,23 +54,32 @@ class VPGBuffer:
 
 
 class PPOBuffer:
-    def __init__(self, obs_dim, act_dim, size, gamma=0.99, lam=0.95):
-        self.obs_buf = np.zeros((size, ) + obs_dim, dtype=np.float64)
-        self.act_buf = np.zeros((size, ) + act_dim, dtype=np.float32)
-        self.adv_buf = np.zeros(size, dtype=np.float32)
-        self.rew_buf = np.zeros(size, dtype=np.float32)
-        self.done_buf = np.zeros(size, dtype=np.float32)
-        self.ret_buf = np.zeros(size, dtype=np.float32)
-        self.val_buf = np.zeros(size, dtype=np.float32)
-        self.logp_buf = np.zeros(size, dtype=np.float32)
+    def __init__(self, obs_dim, act_dim, size, num_env=1,  gamma=0.99, lam=0.95):
+        self.obs_buf = np.zeros((size, num_env) + obs_dim, dtype=np.float64)
+        self.act_buf = np.zeros((size, num_env) + act_dim, dtype=np.float32)
+        self.adv_buf = np.zeros((size, num_env), dtype=np.float32)
+        self.rew_buf = np.zeros((size, num_env), dtype=np.float32)
+        self.done_buf = np.zeros((size, num_env), dtype=np.float32)
+        self.ret_buf = np.zeros((size, num_env), dtype=np.float32)
+        self.val_buf = np.zeros((size, num_env), dtype=np.float32)
+        self.logp_buf = np.zeros((size, num_env), dtype=np.float32)
         self.gamma, self.lam = gamma, lam
         self.ptr, self.max_size = 0, size
+        self.obs_dim = obs_dim
+        self.act_dim = act_dim
+        self.num_env = num_env
 
     def store(self, obs, act, rew, done, val, logp):
         """
         Store transition.
         """
         assert self.ptr < self.max_size
+        assert obs.shape == (self.num_env,) + self.obs_dim
+        assert act.shape == (self.num_env,) + self.act_dim
+        assert rew.shape == (self.num_env,)
+        assert done.shape == (self.num_env,)
+        assert val.shape == (self.num_env,)
+        assert logp.shape == (self.num_env,)
         self.obs_buf[self.ptr] = obs
         self.act_buf[self.ptr] = act
         self.rew_buf[self.ptr] = rew
@@ -79,9 +88,10 @@ class PPOBuffer:
         self.logp_buf[self.ptr] = logp
         self.ptr += 1
 
-    def finish_path(self, last_val=0.):
+    def finish_path(self, last_val=None):
         assert self.ptr == self.max_size
-        vals = np.append(self.val_buf, last_val)
+        assert last_val.shape == (self.num_env,)
+        vals = np.append(self.val_buf, last_val.reshape(1, -1), axis=0)
 
         # the next two" lines implement GAE-Lambda advantage calculation
         lastgaelam = 0.0
@@ -99,11 +109,12 @@ class PPOBuffer:
     def get(self):
         assert self.ptr == self.max_size
         self.ptr = 0
-        # the next two lines implement the advantage normalization trick
-        # self.adv_buf = (self.adv_buf - np.mean(self.adv_buf)) / \
-        #     (np.std(self.adv_buf) + EPS)
-        return [self.obs_buf, self.act_buf, self.adv_buf,
-                self.ret_buf, self.logp_buf, self.val_buf]
+        return [self.obs_buf.reshape(self.max_size * self.num_env, -1),
+                self.act_buf.reshape(self.max_size * self.num_env, -1),
+                self.adv_buf.reshape(-1),
+                self.ret_buf.reshape(-1),
+                self.logp_buf.reshape(-1),
+                self.val_buf.reshape(-1)]
 
 
 class TRPOBuffer:

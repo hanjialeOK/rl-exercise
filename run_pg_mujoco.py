@@ -11,10 +11,11 @@ import pg.agents.trpo as TRPO
 import pg.agents.ppo as PPO
 import pg.agents.ppo2 as PPO2
 import pg.agents.ppo_m as PPOM
-import common.vec_normalize as Wrapper
 
-from baselines.common.cmd_util import make_vec_env
-from baselines.common.vec_env import VecNormalize
+from common.cmd_util import make_vec_env
+from common.vec_env.vec_normalize import VecNormalize
+# from baselines.common.cmd_util import make_vec_env
+# from baselines.common.vec_env.vec_normalize import VecNormalize
 
 from termcolor import cprint, colored
 from common.serialization_utils import convert_json, save_json
@@ -70,6 +71,8 @@ def main():
                         help='Whether to save model')
     parser.add_argument('--total_steps', type=int, default=1e6,
                         help='Total steps trained')
+    parser.add_argument('--num_env', type=int, default=1,
+                        help='Number of envs.')
     args = parser.parse_args()
 
     if not os.path.exists(args.data_dir):
@@ -115,14 +118,13 @@ def main():
     env_eval.seed(seed)
     obs_dim = env.observation_space.shape
     act_dim = env.action_space.shape
-    max_action = float(env.action_space.high[0])
 
     # Normalized rew and obs
-    # env = Wrapper.VecNormalize(env)
-    # env_eval = Wrapper.VecNormalize(env_eval, ret=False)
-    env = make_vec_env(env_name, 'mujoco', 1, seed,
-                       reward_scale=1.0, flatten_dict_observations=True)
-    env = VecNormalize(env, use_tf=False)
+    # env = make_vec_env(env_name, env_type='mujoco',
+    #                    num_env=args.num_env, seed=seed)
+    # env = VecNormalize(env, use_tf=False)
+    env = make_vec_env(env_name, num_env=args.num_env, seed=seed)
+    env = VecNormalize(env)
 
     # Tensorboard
     summary_writer = tf.compat.v1.summary.FileWriter(summary_dir)
@@ -145,15 +147,20 @@ def main():
            color='cyan', attrs=['bold'])
 
     if args.alg == 'VPG':
+        raise NotImplementedError
         agent = VPG.VPGAgent(sess, obs_dim, act_dim, horizon=1000)
     elif args.alg == 'TRPO':
+        raise NotImplementedError
         agent = TRPO.TRPOAgent(sess, obs_dim, act_dim, horizon=1000)
     elif args.alg == 'PPO':
-        agent = PPO.PPOAgent(sess, obs_dim, act_dim, horizon=2048)
+        agent = PPO.PPOAgent(sess, obs_dim, act_dim,
+                             num_env=args.num_env, horizon=2048)
     elif args.alg == 'PPOM':
+        raise NotImplementedError
         agent = PPOM.PPOAgent(sess, obs_dim, act_dim, horizon=1000)
     elif args.alg == 'PPO2':
-        agent = PPO2.PPOAgent(sess, obs_dim, act_dim, horizon=2048)
+        agent = PPO2.PPOAgent(sess, obs_dim, act_dim,
+                              num_env=args.num_env, horizon=2048)
     else:
         raise ValueError('Unknown agent: {}'.format(args.alg))
 
@@ -169,42 +176,26 @@ def main():
     # Start
     start_time = time.time()
     obs = env.reset()
-    ep_ret, ep_len = 0.0, 0
-    ep_count = 0
     max_ep_ret = 0
     ep_ret_buf = collections.deque(maxlen=100)
     ep_len_buf = collections.deque(maxlen=100)
 
     epochs = total_steps // agent.horizon
     for epoch in range(1, epochs + 1):
-        # obs = env.reset()
-        # ep_ret, ep_len = 0.0, 0
         for t in range(1, horizon + 1):
             ac = agent.select_action(obs)
 
-            next_obs, reward, done, info = env.step(ac)
-            if isinstance(done, np.ndarray):
-                next_obs = next_obs[0]
-                reward = reward[0]
-                done = done[0]
-                info = info[0]
+            next_obs, rewards, dones, infos = env.step(ac)
 
-            # ep_ret += reward
-            # ep_len += 1
-
-            agent.store_transition(obs, ac, reward, done)
+            agent.store_transition(obs, ac, rewards, dones)
 
             obs = next_obs
 
-            if done:
-                ep_count += 1
-                ep_ret = info['episode']['r']
-                ep_len = info['episode']['l']
-                ep_ret_buf.append(ep_ret)
-                ep_len_buf.append(ep_len)
-                # Episode restart
-                obs = env.reset()
-                ep_ret, ep_len = 0.0, 0
+            for info in infos:
+                ep_info = info.get('episode')
+                if ep_info:
+                    ep_ret_buf.append(ep_info['r'])
+                    ep_len_buf.append(ep_info['l'])
 
         # If trajectory didn't reach terminal state, bootstrap value target
         last_val = agent.compute_v(obs)
