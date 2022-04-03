@@ -120,9 +120,9 @@ def get_datasets(logdir, legend=None, tag=None, data_file='progress.txt'):
 
 
 def main(args):
-    envs = ['Ant', 'HalfCheetah', 'Hopper', 'Humanoid',
+    envs = ['Ant', 'HalfCheetah', 'Hopper', 'Humanoid', 'HumanoidStandup',
             'InvertedDoublePendulum', 'InvertedPendulum', 'Reacher', 'Swimmer', 'Walker2d']
-    algs = ['PPO-env', 'baselines-PPO']
+    algs = ['PPO-vec_env', 'baselines-PPO']
     legends = ['PPO-ours', 'baselines-PPO']
     version = 'v2'
 
