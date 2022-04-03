@@ -99,10 +99,24 @@ Run six experiments for all envs.
 zsh run_pg_mujoco_all.sh PPO2 PPO-test
 ```
 
+## Plotting
+
+Plot for one env.
+
+```c
+python rl-exercise/common/plot.py --logdir PPO-env baselines-PPO --xaxis=Step --value=AvgEpRet --legend PPO-env baselines-PPO
+```
+
+Plot for all envs.
+
+```c
+python rl-exercise/common/plot_all.py --logdir my_results --xaxis=Step --value=AvgEpRet
+```
+
 ## Training curves
 
 ### Mujoco
 
-Average 6 seeds.
+Average 6 seeds. 68% confidence interval.
 
 ![mujoco](./assets/all25_vec_env.svg)
