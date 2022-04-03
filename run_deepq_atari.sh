@@ -1,4 +1,4 @@
-# /bin/zsh
+#!/bin/zsh
 ALGO=$1
 ENV=$2
 DIR_NAME=$3

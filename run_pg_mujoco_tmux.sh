@@ -1,4 +1,4 @@
-# /bin/zsh
+#!/bin/zsh
 
 # Create 4 panes in a new window
 tmux new-window
