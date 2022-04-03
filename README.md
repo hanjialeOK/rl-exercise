@@ -64,7 +64,7 @@ Arguments:
 usage: run_pg_mujoco.py [-h] [--dir_name DIR_NAME] [--data_dir DATA_DIR]
                         [--env ENV] [--alg {VPG,TRPO,PPO,PPO2,PPOM}]
                         [--allow_eval] [--save_model]
-                        [--total_steps TOTAL_STEPS]
+                        [--total_steps TOTAL_STEPS] [--num_env NUM_ENV]
 
 optional arguments:
   -h, --help            show this help message and exit
@@ -77,6 +77,7 @@ optional arguments:
   --save_model          Whether to save model
   --total_steps TOTAL_STEPS
                         Total steps trained
+  --num_env NUM_ENV     Number of envs.
 ```
 
 Run one experiment:
@@ -89,5 +90,19 @@ CUDA_VISIBLE_DEVICES=1 python run_pg_mujoco.py --alg TRPO --allow_eval
 Run six parallel experiments using script.
 
 ```c
-zsh run_pg_mujoco.py PPO2 Walker2d-v2 PPO-keras-test
+zsh run_pg_mujoco.sh PPO2 Walker2d-v2 PPO-test 1
 ```
+
+Run six experiments for all envs.
+
+```c
+zsh run_pg_mujoco_all.sh PPO2 PPO-test
+```
+
+## Training curves
+
+### Mujoco
+
+Average 6 seeds.
+
+![mujoco](./assets/all25_vec_env.svg)
