@@ -5,6 +5,7 @@ import json
 import os
 import numpy as np
 import argparse
+from matplotlib.ticker import EngFormatter
 
 DIV_LINE_WIDTH = 50
 
@@ -155,6 +156,8 @@ def main(args):
     plt.figure()
     plot_data(data, xaxis=args.xaxis, value=args.value, condition='Condition',
               smooth=args.smooth, estimator=estimator)
+    plt.xlabel('')
+    plt.ylabel('')
     plt.show()
     plt.savefig(f'{args.name}.pdf')
     print(f"Saved into {os.path.abspath(f'{args.name}.pdf')}")

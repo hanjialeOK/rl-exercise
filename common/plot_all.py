@@ -5,6 +5,7 @@ import json
 import os
 import numpy as np
 import argparse
+from matplotlib.ticker import EngFormatter
 
 DIV_LINE_WIDTH = 50
 
@@ -172,6 +173,9 @@ def main(args):
                   smooth=args.smooth, ax=ax)
 
         ax.set_title(env_name)
+        ax.set_xlabel('')
+        ax.set_ylabel('')
+        ax.xaxis.set_major_formatter(EngFormatter())
 
     # plt.ticklabel_format(style='sci', axis='x', scilimits=(0, 0))
     plt.tight_layout(pad=0.5)
