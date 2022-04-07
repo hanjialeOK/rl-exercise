@@ -119,4 +119,4 @@ python rl-exercise/common/plot_all.py --logdir my_results --xaxis=Step --value=A
 
 Average 6 seeds. 68% confidence interval.
 
-![mujoco](./assets/all25_vec_env.svg)
+![mujoco](./assets/all25-vec_env.svg)
