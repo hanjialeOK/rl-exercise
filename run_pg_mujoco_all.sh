@@ -7,25 +7,25 @@ LEN=${#ENV[*]}
 
 for i in $(seq 1 ${LEN})
 do
-    CUDA_VISIBLE_DEVICES=0 PYTHONWARNINGS=ignore python run_pg_mujoco.py \
-        --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} > /dev/null &
-    sleep 5
-    CUDA_VISIBLE_DEVICES=0 PYTHONWARNINGS=ignore python run_pg_mujoco.py \
-        --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} > /dev/null &
-    sleep 5
-    CUDA_VISIBLE_DEVICES=0 PYTHONWARNINGS=ignore python run_pg_mujoco.py \
-        --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} > /dev/null &
-    sleep 5
-    CUDA_VISIBLE_DEVICES=1 PYTHONWARNINGS=ignore python run_pg_mujoco.py \
-        --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} > /dev/null &
-    sleep 5
-    CUDA_VISIBLE_DEVICES=1 PYTHONWARNINGS=ignore python run_pg_mujoco.py \
-        --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} > /dev/null &
-    sleep 5
-    CUDA_VISIBLE_DEVICES=1 PYTHONWARNINGS=ignore python run_pg_mujoco.py \
-        --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} > /dev/null &
     echo "Running ${ENV[i]} (${i}/${LEN}) for six experiments..."
-    sleep 30m
+    CUDA_VISIBLE_DEVICES=0 PYTHONWARNINGS=ignore python run_pg_mujoco.py \
+        --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} > /dev/null &
+    sleep 5
+    CUDA_VISIBLE_DEVICES=0 PYTHONWARNINGS=ignore python run_pg_mujoco.py \
+        --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} > /dev/null &
+    sleep 5
+    CUDA_VISIBLE_DEVICES=0 PYTHONWARNINGS=ignore python run_pg_mujoco.py \
+        --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} > /dev/null &
+    sleep 5
+    CUDA_VISIBLE_DEVICES=1 PYTHONWARNINGS=ignore python run_pg_mujoco.py \
+        --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} > /dev/null &
+    sleep 5
+    CUDA_VISIBLE_DEVICES=1 PYTHONWARNINGS=ignore python run_pg_mujoco.py \
+        --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} > /dev/null &
+    sleep 5
+    CUDA_VISIBLE_DEVICES=1 PYTHONWARNINGS=ignore python run_pg_mujoco.py \
+        --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} > /dev/null
+    sleep 10
     while true
     do
         pid0=$(fuser /dev/nvidia0)
@@ -35,7 +35,7 @@ do
             break
         else
             echo "Busy! ${pid0}${pid1} is running."
-            sleep 1m
+            sleep 10
         fi
     done
 done
