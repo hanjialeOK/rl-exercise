@@ -7,22 +7,22 @@ LEN=${#ENV[*]}
 
 for i in $(seq 1 ${LEN})
 do
-    CUDA_VISIBLE_DEVICES=0 python run_pg_mujoco.py \
+    CUDA_VISIBLE_DEVICES=0 PYTHONWARNINGS=ignore python run_pg_mujoco.py \
         --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} > /dev/null &
     sleep 5
-    CUDA_VISIBLE_DEVICES=0 python run_pg_mujoco.py \
+    CUDA_VISIBLE_DEVICES=0 PYTHONWARNINGS=ignore python run_pg_mujoco.py \
         --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} > /dev/null &
     sleep 5
-    CUDA_VISIBLE_DEVICES=0 python run_pg_mujoco.py \
+    CUDA_VISIBLE_DEVICES=0 PYTHONWARNINGS=ignore python run_pg_mujoco.py \
         --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} > /dev/null &
     sleep 5
-    CUDA_VISIBLE_DEVICES=1 python run_pg_mujoco.py \
+    CUDA_VISIBLE_DEVICES=1 PYTHONWARNINGS=ignore python run_pg_mujoco.py \
         --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} > /dev/null &
     sleep 5
-    CUDA_VISIBLE_DEVICES=1 python run_pg_mujoco.py \
+    CUDA_VISIBLE_DEVICES=1 PYTHONWARNINGS=ignore python run_pg_mujoco.py \
         --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} > /dev/null &
     sleep 5
-    CUDA_VISIBLE_DEVICES=1 python run_pg_mujoco.py \
+    CUDA_VISIBLE_DEVICES=1 PYTHONWARNINGS=ignore python run_pg_mujoco.py \
         --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} > /dev/null &
     echo "Running ${ENV[i]} (${i}/${LEN}) for six experiments..."
     sleep 30m
