@@ -1,13 +1,27 @@
 #!/bin/zsh
+
+# color
+RED=$(tput setaf 1)
+GREEN=$(tput setaf 2)
+YELLOW=$(tput setaf 3)
+BLUE=$(tput setaf 4)
+MAGENTA=$(tput setaf 5)
+CYAN=$(tput setaf 6)
+WHIHE=$(tput setaf 7)
+# mode
+BOLD=$(tput bold)
+RESET=$(tput sgr0)
+
 ALGO=$1
 DIR_NAME=$2
 ENV=('Ant-v2' 'HalfCheetah-v2' 'Hopper-v2' 'Humanoid-v2' 'HumanoidStandup-v2'
      'InvertedDoublePendulum-v2' 'InvertedPendulum-v2' 'Reacher-v2' 'Swimmer-v2' 'Walker2d-v2')
 LEN=${#ENV[*]}
+SECONDS=0
 
 for i in $(seq 1 ${LEN})
 do
-    echo "Running ${ENV[i]} (${i}/${LEN}) for six experiments..."
+    echo "${CYAN}${BOLD}Running ${ENV[i]} (${i}/${LEN}) for six experiments...${RESET}"
     CUDA_VISIBLE_DEVICES=0 PYTHONWARNINGS=ignore python run_pg_mujoco.py \
         --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} > /dev/null &
     sleep 5
@@ -25,17 +39,23 @@ do
     sleep 5
     CUDA_VISIBLE_DEVICES=1 PYTHONWARNINGS=ignore python run_pg_mujoco.py \
         --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} > /dev/null
-    sleep 10
+    sleep 30
     while true
     do
         pid0=$(fuser /dev/nvidia0)
         pid1=$(fuser /dev/nvidia1)
         if [ ! ${pid0} ] && [ ! ${pid1} ]; then
-            echo "Completed!"
+            echo "${GREEN}${ENV[i]} is done!${RESET}"
             break
         else
-            echo "Busy! ${pid0}${pid1} is running."
+            echo "${RED}Busy! ${pid0}${pid1} is running.${RESET}"
             sleep 10
         fi
     done
 done
+
+duration=$SECONDS
+h=$(($duration/3600))
+m=$((($duration/60)%60))
+s=$(($duration%60))
+echo "Completed! Time taken: ${h}:${m}:${s}."
