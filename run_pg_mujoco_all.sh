@@ -45,7 +45,7 @@ do
 done
 
 duration=$SECONDS
-h=$(($duration/3600))
-m=$((($duration/60)%60))
-s=$(($duration%60))
+h=$[$duration/3600]
+m=$[($duration/60)%60]
+s=$[$duration%60]
 printf %s%02d:%02d:%02d%s\\n "Completed! Time taken: " "${h}" "${m}" "${s}" "."
