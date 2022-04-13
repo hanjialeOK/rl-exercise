@@ -57,10 +57,15 @@ class CriticMLP(tf.keras.Model):
 
 
 class A2CAgent():
+    """
+    The difference between Vanilla Policy Gradient (VPG) with a baseline as value
+    function and Advantage Actor-Critic (A2C) is very similar to the difference
+    between Monte Carlo Control and SARSA.
+    """
+
     def __init__(self, sess, obs_dim, act_dim, num_env=1,
-                 lr=3e-4,
-                 ent_coef=0.0, vf_coef=0.5, max_grad_norm=0.5,
-                 horizon=5, gamma=0.99, lam=0.95,
+                 lr=3e-4, ent_coef=0.0, vf_coef=0.5,
+                 max_grad_norm=0.5, horizon=5, gamma=0.99, lam=0.95,
                  grad_clip=True, fixed_lr=False):
         self.sess = sess
         self.obs_dim = obs_dim
