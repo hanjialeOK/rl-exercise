@@ -38,24 +38,14 @@ do
         --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} > /dev/null &
     sleep 5
     CUDA_VISIBLE_DEVICES=1 PYTHONWARNINGS=ignore python run_pg_mujoco.py \
-        --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} > /dev/null
-    sleep 30
-    while true
-    do
-        pid0=$(fuser /dev/nvidia0)
-        pid1=$(fuser /dev/nvidia1)
-        if [ ! ${pid0} ] && [ ! ${pid1} ]; then
-            echo "${GREEN}${ENV[i]} is done!${RESET}"
-            break
-        else
-            echo "${RED}Busy! ${pid0}${pid1} is running.${RESET}"
-            sleep 10
-        fi
-    done
+        --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} > /dev/null &
+    # Waiting for all subprocess finished.
+    wait
+    sleep 10
 done
 
 duration=$SECONDS
 h=$(($duration/3600))
 m=$((($duration/60)%60))
 s=$(($duration%60))
-echo "Completed! Time taken: ${h}:${m}:${s}."
+printf %s%02d:%02d:%02d%s\\n "Completed! Time taken: " "${h}" "${m}" "${s}" "."
