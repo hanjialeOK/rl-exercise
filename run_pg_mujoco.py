@@ -6,11 +6,12 @@ import os
 import argparse
 import collections
 
+import pg.agents.a2c as A2C
 import pg.agents.vpg as VPG
 import pg.agents.trpo as TRPO
 import pg.agents.ppo as PPO
 import pg.agents.ppo2 as PPO2
-import pg.agents.ppo_m as PPOM
+import pg.agents.ppo2_distv as PPOV
 
 from common.cmd_util import make_vec_env
 from common.vec_env.vec_normalize import VecNormalize
@@ -63,8 +64,8 @@ def main():
     parser.add_argument('--env', type=str,
                         default='Walker2d-v2')
     parser.add_argument('--alg', type=str, default='PPO',
-                        choices=['VPG', 'TRPO', 'PPO', 'PPO2', 'PPOM'],
-                        help='Experiment name',)
+                        choices=['VPG', 'TRPO', 'PPO', 'PPO2', 'PPOV', 'A2C'],
+                        help='Experiment name')
     parser.add_argument('--allow_eval', action='store_true',
                         help='Whether to eval agent')
     parser.add_argument('--save_model', action='store_true',
@@ -87,6 +88,7 @@ def main():
         args.data_dir, f"my_results/{env_name}/{dir_name}/{base_name}")
     if not os.path.exists(base_dir):
         os.makedirs(base_dir)
+    total_steps = int(args.total_steps)
 
     # Dump config.
     # locals() can only be put at main(), instead of __main__.
@@ -146,7 +148,12 @@ def main():
            f'{gpu_list}\n',
            color='cyan', attrs=['bold'])
 
-    if args.alg == 'VPG':
+    if args.alg == 'A2C':
+        agent = A2C.A2CAgent(sess, obs_dim, act_dim,
+                             num_env=args.num_env, horizon=5)
+        # 1M // 5 // 488 = 409
+        log_interval = total_steps // agent.horizon // 488
+    elif args.alg == 'VPG':
         raise NotImplementedError
         agent = VPG.VPGAgent(sess, obs_dim, act_dim, horizon=1000)
     elif args.alg == 'TRPO':
@@ -155,21 +162,25 @@ def main():
     elif args.alg == 'PPO':
         agent = PPO.PPOAgent(sess, obs_dim, act_dim,
                              num_env=args.num_env, horizon=2048)
-    elif args.alg == 'PPOM':
-        raise NotImplementedError
-        agent = PPOM.PPOAgent(sess, obs_dim, act_dim, horizon=1000)
+        # 1M // 2048 / 488 = 1
+        log_interval = 1
+    elif args.alg == 'PPOV':
+        agent = PPOV.PPOAgent(sess, obs_dim, act_dim,
+                              num_env=args.num_env, horizon=2048)
+        # 1M // 2048 / 488 = 1
+        log_interval = 1
     elif args.alg == 'PPO2':
         agent = PPO2.PPOAgent(sess, obs_dim, act_dim,
                               num_env=args.num_env, horizon=2048)
+        # 1M // 2048 / 488 = 1
+        log_interval = 1
     else:
         raise ValueError('Unknown agent: {}'.format(args.alg))
 
     sess.run(tf.compat.v1.global_variables_initializer())
 
     # Params
-    total_steps = int(args.total_steps)
     horizon = agent.horizon
-    eval_freq = 10
 
     cprint(f'Running experiment: {args.alg}\n', color='cyan', attrs=['bold'])
 
@@ -180,7 +191,7 @@ def main():
     ep_ret_buf = collections.deque(maxlen=100)
     ep_len_buf = collections.deque(maxlen=100)
 
-    epochs = total_steps // agent.horizon
+    epochs = total_steps // horizon
     for epoch in range(1, epochs + 1):
         for t in range(1, horizon + 1):
             ac = agent.select_action(obs)
@@ -208,37 +219,39 @@ def main():
         # Steps we have trained.
         step = epoch * horizon
 
-        avg_ep_ret = np.mean(ep_ret_buf)
-        avg_ep_len = np.mean(ep_len_buf)
+        if epoch % log_interval == 0:
+            avg_ep_ret = np.mean(ep_ret_buf)
+            avg_ep_len = np.mean(ep_len_buf)
 
-        # Episode summary
-        train_summary = tf.compat.v1.Summary(value=[
-            tf.compat.v1.Summary.Value(
-                tag="train/avglen", simple_value=avg_ep_len),
-            tf.compat.v1.Summary.Value(
-                tag="train/avgret", simple_value=avg_ep_ret),
-            tf.compat.v1.Summary.Value(
-                tag="loss/avgkl", simple_value=kl),
-            tf.compat.v1.Summary.Value(
-                tag="loss/avgpiloss", simple_value=pi_loss),
-            tf.compat.v1.Summary.Value(
-                tag="loss/avgvloss", simple_value=v_loss),
-            tf.compat.v1.Summary.Value(
-                tag="loss/avgentropy", simple_value=entropy)
-        ])
-        summary_writer.add_summary(train_summary, step)
-        with open(progress_txt, 'a') as f:
-            f.write(f"{step}\t{avg_ep_len}\t{avg_ep_ret}\n")
-        ep_ret_text = colored(f'{avg_ep_ret:.1f}',
-                              color='green', attrs=['bold'])
-        print(f'@Epoch: {epoch}/{epochs}, '
-              f'AvgLen: {avg_ep_len}, AvgRet: {ep_ret_text}, '
-              f'Algo {args.alg}: {epoch/epochs:.1%}\n'
-              f'pi_loss: {pi_loss:.4f}, v_loss: {v_loss:.4f}, '
-              f'entropy: {entropy:.4f}, kl: {kl:.4f}')
+            # Episode summary
+            train_summary = tf.compat.v1.Summary(value=[
+                tf.compat.v1.Summary.Value(
+                    tag="train/avglen", simple_value=avg_ep_len),
+                tf.compat.v1.Summary.Value(
+                    tag="train/avgret", simple_value=avg_ep_ret),
+                tf.compat.v1.Summary.Value(
+                    tag="loss/avgkl", simple_value=kl),
+                tf.compat.v1.Summary.Value(
+                    tag="loss/avgpiloss", simple_value=pi_loss),
+                tf.compat.v1.Summary.Value(
+                    tag="loss/avgvloss", simple_value=v_loss),
+                tf.compat.v1.Summary.Value(
+                    tag="loss/avgentropy", simple_value=entropy)
+            ])
+            summary_writer.add_summary(train_summary, step)
+            with open(progress_txt, 'a') as f:
+                f.write(f"{step}\t{avg_ep_len}\t{avg_ep_ret}\n")
+            ep_ret_text = colored(f'{avg_ep_ret:.1f}',
+                                  color='green', attrs=['bold'])
+            print(f'@Epoch: {epoch}/{epochs}, '
+                  f'AvgLen: {avg_ep_len}, AvgRet: {ep_ret_text}, '
+                  f'Algo {args.alg}: {epoch/epochs:.1%}\n'
+                  f'pi_loss: {pi_loss:.4f}, v_loss: {v_loss:.4f}, '
+                  f'entropy: {entropy:.4f}, kl: {kl:.4f}')
 
         # Evaluate
-        if epoch % eval_freq == 0 and args.allow_eval:
+        if epoch % 100 == 0 and args.allow_eval:
+            raise NotImplementedError
             avg_ret, evg_len = evaluate(env_eval, agent)
             # Summary
             eval_summary = tf.compat.v1.Summary(value=[
