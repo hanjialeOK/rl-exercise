@@ -152,11 +152,11 @@ class PPOAgent():
         if self.vf_clip:
             valclipped = val_ph + \
                 tf.clip_by_value(v - val_ph, -self.clip_ratio, self.clip_ratio)
-            v_loss1 = tf.square(v - ret_ph)
-            v_loss2 = tf.square(valclipped - ret_ph)
-            v_loss = 0.5 * tf.reduce_mean(tf.maximum(v_loss1, v_loss2))
+            vf_loss1 = tf.square(v - ret_ph)
+            vf_loss2 = tf.square(valclipped - ret_ph)
+            vf_loss = 0.5 * tf.reduce_mean(tf.maximum(vf_loss1, vf_loss2))
         else:
-            v_loss = 0.5 * tf.reduce_mean(tf.square(v - ret_ph))
+            vf_loss = 0.5 * tf.reduce_mean(tf.square(v - ret_ph))
 
         # Info (useful to watch during learning)
         # a sample estimate for KL-divergence, easy to compute
@@ -166,7 +166,7 @@ class PPOAgent():
         clipfrac = tf.reduce_mean(tf.cast(clipped, tf.float32))
 
         # Total loss
-        loss = pi_loss - entropy * self.ent_coef + v_loss * self.vf_coef
+        loss = pi_loss - entropy * self.ent_coef + vf_loss * self.vf_coef
 
         # Optimizers
         optimizer = tf.train.AdamOptimizer(learning_rate=lr_ph, epsilon=1e-5)
@@ -185,7 +185,7 @@ class PPOAgent():
         self.get_action_ops = get_action_ops
         self.v1 = v1
         self.pi_loss = pi_loss
-        self.v_loss = v_loss
+        self.vf_loss = vf_loss
         self.approx_kl = approx_kl
         self.entropy = entropy
         self.clipfrac = clipfrac
@@ -196,7 +196,7 @@ class PPOAgent():
         assert buf_data[0].shape[0] == self.horizon * self.num_env
 
         pi_loss_buf = []
-        v_loss_buf = []
+        vf_loss_buf = []
         entropy_buf = []
         kl_buf = []
 
@@ -224,24 +224,18 @@ class PPOAgent():
                     self.all_phs[6]: lr,
                 }
 
-                pi_loss, v_loss, entropy, kl, _ = self.sess.run(
-                    [self.pi_loss, self.v_loss,
+                pi_loss, vf_loss, entropy, kl, _ = self.sess.run(
+                    [self.pi_loss, self.vf_loss,
                      self.entropy, self.approx_kl,
                      self.train_op],
                     feed_dict=inputs)
                 pi_loss_buf.append(pi_loss)
-                v_loss_buf.append(v_loss)
+                vf_loss_buf.append(vf_loss)
                 entropy_buf.append(entropy)
                 kl_buf.append(kl)
 
-        return [np.mean(pi_loss_buf), np.mean(v_loss_buf),
+        return [np.mean(pi_loss_buf), np.mean(vf_loss_buf),
                 np.mean(entropy_buf), np.mean(kl_buf)]
-
-    def _build_saver(self):
-        pi_params = self._get_var_list('pi')
-        vf_params = self._get_var_list('vf')
-        return tf.compat.v1.train.Saver(var_list=pi_params + vf_params,
-                                        max_to_keep=4)
 
     def select_action(self, obs, deterministic=False):
         [mu, pi, v, logp_pi] = self.sess.run(
@@ -258,6 +252,12 @@ class PPOAgent():
         [v, logp_pi] = self.extra_info
         self.buffer.store(obs, action, reward, done,
                           v, logp_pi)
+
+    def _build_saver(self):
+        pi_params = self._get_var_list('pi')
+        vf_params = self._get_var_list('vf')
+        return tf.compat.v1.train.Saver(var_list=pi_params + vf_params,
+                                        max_to_keep=4)
 
     def bundle(self, checkpoint_dir, epoch):
         if not os.path.exists(checkpoint_dir):
