@@ -19,6 +19,9 @@ ENV=('Ant-v2' 'HalfCheetah-v2' 'Hopper-v2' 'Humanoid-v2' 'HumanoidStandup-v2'
 LEN=${#ENV[*]}
 SECONDS=0
 
+echo "Running rl-exercise..."
+echo "=================================================="
+
 for i in $(seq 1 ${LEN})
 do
     echo "${CYAN}${BOLD}Running ${ENV[i]} (${i}/${LEN}) for six experiments...${RESET}"
