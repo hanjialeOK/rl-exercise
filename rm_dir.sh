@@ -6,11 +6,11 @@ LEN=${#ENV[*]}
 
 for i in $(seq 1 ${LEN})
 do
-    cd ${BASE_DIR}"/"${ENV[i]}
+    cd ${BASE_DIR%%/}/${ENV[i]}
     if [ ! -d ${TARGET_DIR} ]; then
-        echo "No such dir: ${BASE_DIR}"/"${ENV[i]}"/"${TARGET_DIR}"
+        echo "No such dir: ${BASE_DIR%%/}/${ENV[i]}/${TARGET_DIR}"
     else
         rm -rf ${TARGET_DIR}
-        echo "Deleted ${BASE_DIR}"/"${ENV[i]}"/"${TARGET_DIR}."
+        echo "Deleted ${BASE_DIR%%/}/${ENV[i]}/${TARGET_DIR}."
     fi
 done
