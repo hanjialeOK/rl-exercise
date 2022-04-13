@@ -6,13 +6,6 @@ import os
 import argparse
 import collections
 
-import pg.agents.a2c as A2C
-import pg.agents.vpg as VPG
-import pg.agents.trpo as TRPO
-import pg.agents.ppo as PPO
-import pg.agents.ppo2 as PPO2
-import pg.agents.ppo2_distv as PPOV
-
 from common.cmd_util import make_vec_env
 from common.vec_env.vec_normalize import VecNormalize
 # from baselines.common.cmd_util import make_vec_env
@@ -149,27 +142,35 @@ def main():
            color='cyan', attrs=['bold'])
 
     if args.alg == 'A2C':
+        import pg.agents.a2c as A2C
         agent = A2C.A2CAgent(sess, obs_dim, act_dim,
                              num_env=args.num_env, horizon=5)
         # 1M // 5 // 488 = 409
         log_interval = total_steps // agent.horizon // 488
     elif args.alg == 'VPG':
-        raise NotImplementedError
-        agent = VPG.VPGAgent(sess, obs_dim, act_dim, horizon=1000)
+        import pg.agents.vpg as VPG
+        agent = VPG.VPGAgent(sess, obs_dim, act_dim,
+                             num_env=args.num_env, horizon=2048)
+        # 1M // 2048 / 488 = 1
+        log_interval = 1
     elif args.alg == 'TRPO':
         raise NotImplementedError
+        import pg.agents.trpo as TRPO
         agent = TRPO.TRPOAgent(sess, obs_dim, act_dim, horizon=1000)
     elif args.alg == 'PPO':
+        import pg.agents.ppo as PPO
         agent = PPO.PPOAgent(sess, obs_dim, act_dim,
                              num_env=args.num_env, horizon=2048)
         # 1M // 2048 / 488 = 1
         log_interval = 1
     elif args.alg == 'PPOV':
+        import pg.agents.ppo2_distv as PPOV
         agent = PPOV.PPOAgent(sess, obs_dim, act_dim,
                               num_env=args.num_env, horizon=2048)
         # 1M // 2048 / 488 = 1
         log_interval = 1
     elif args.alg == 'PPO2':
+        import pg.agents.ppo2 as PPO2
         agent = PPO2.PPOAgent(sess, obs_dim, act_dim,
                               num_env=args.num_env, horizon=2048)
         # 1M // 2048 / 488 = 1
