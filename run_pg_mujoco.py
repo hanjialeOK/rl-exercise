@@ -245,7 +245,7 @@ def main():
             ep_ret_text = colored(f'{avg_ep_ret:.1f}',
                                   color='green', attrs=['bold'])
             print(f'@Epoch: {epoch}/{epochs}, '
-                  f'AvgLen: {avg_ep_len}, AvgRet: {ep_ret_text}, '
+                  f'AvgLen: {avg_ep_len:.1f}, AvgRet: {ep_ret_text}, '
                   f'Algo {args.alg}: {epoch/epochs:.1%}\n'
                   f'pi_loss: {pi_loss:.4f}, v_loss: {v_loss:.4f}, '
                   f'entropy: {entropy:.4f}, kl: {kl:.4f}')
