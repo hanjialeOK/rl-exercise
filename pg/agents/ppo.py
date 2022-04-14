@@ -3,7 +3,7 @@ import tensorflow as tf
 import tensorflow_probability as tfp
 import os
 
-import pg.buffer.vpgbuffer as Buffer
+import pg.buffer.gaebuffer as Buffer
 
 
 def tf_ortho_init(scale):
@@ -33,7 +33,7 @@ class PPOAgent():
         self.vf_clip = vf_clip
         self.fixed_lr = fixed_lr
 
-        self.buffer = Buffer.PPOBuffer(
+        self.buffer = Buffer.GAEBuffer(
             obs_dim, act_dim, size=horizon, num_env=num_env, gamma=gamma, lam=lam)
         self._build_train_op()
         self.saver = self._build_saver()
@@ -190,8 +190,7 @@ class PPOAgent():
                 slices = [arr[mbinds] for arr in buf_data]
                 [obs, actions, advs, rets, logprobs, values] = slices
                 # advs_raw = rets - values
-                advs = (advs - np.mean(advs)) / \
-                    (np.std(advs) + 1e-8)
+                advs = (advs - np.mean(advs)) / (np.std(advs) + 1e-8)
                 lr = self.lr if self.fixed_lr else self.lr * frac
                 inputs = {
                     self.all_phs[0]: obs,
