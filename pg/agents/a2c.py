@@ -3,7 +3,7 @@ import tensorflow as tf
 import tensorflow_probability as tfp
 import os
 
-import pg.buffer.vpgbuffer as Buffer
+import pg.buffer.gaebuffer as Buffer
 
 
 def tf_ortho_init(scale):
@@ -80,7 +80,7 @@ class A2CAgent():
         self.grad_clip = grad_clip
         self.fixed_lr = fixed_lr
 
-        self.buffer = Buffer.VPGBuffer(
+        self.buffer = Buffer.GAEBuffer(
             obs_dim, act_dim, size=horizon, num_env=num_env, gamma=gamma, lam=lam)
         self._build_network()
         self._build_train_op()
@@ -109,10 +109,14 @@ class A2CAgent():
             shape=[self.minibatch, ], dtype=tf.float32, name="adv_ph")
         ret_ph = tf.compat.v1.placeholder(
             shape=[self.minibatch, ], dtype=tf.float32, name="ret_ph")
+        logp_old_ph = tf.compat.v1.placeholder(
+            shape=[self.minibatch, ], dtype=tf.float32, name="logp_old_ph")
+        val_ph = tf.compat.v1.placeholder(
+            shape=[self.minibatch, ], dtype=tf.float32, name="val_ph")
         lr_ph = tf.compat.v1.placeholder(
             shape=[], dtype=tf.float32, name="lr_ph")
 
-        all_phs = [obs_ph, act_ph, adv_ph, ret_ph, lr_ph]
+        all_phs = [obs_ph, act_ph, adv_ph, ret_ph, logp_old_ph, val_ph, lr_ph]
 
         # Probability distribution
         logstd = tf.compat.v1.get_variable(
@@ -124,8 +128,9 @@ class A2CAgent():
         mu1 = self.actor(ob1_ph)
         dist1 = tfp.distributions.Normal(loc=mu1, scale=std)
         pi1 = dist1.sample()
+        logp_pi1 = tf.reduce_sum(dist1.log_prob(pi1), axis=1)
         v1 = self.critic(ob1_ph)
-        get_action_ops = [mu1, pi1, v1]
+        get_action_ops = [mu1, pi1, v1, logp_pi1]
 
         # Train batch data
         mu = self.actor(obs_ph)
@@ -138,6 +143,9 @@ class A2CAgent():
         # A2C objectives
         pi_loss = -tf.reduce_mean(adv_ph * logp_a)
         vf_loss = 0.5 * tf.reduce_mean(tf.square(v - ret_ph))
+
+        # Usefull Infos
+        approx_kl = 0.5 * tf.reduce_mean(tf.square(logp_old_ph - logp_a))
 
         # Total loss
         loss = pi_loss - entropy * self.ent_coef + vf_loss * self.vf_coef
@@ -161,37 +169,42 @@ class A2CAgent():
         self.pi_loss = pi_loss
         self.vf_loss = vf_loss
         self.entropy = entropy
+        self.approx_kl = approx_kl
         self.train_op = train_op
 
     def update(self, frac):
         buf_data = self.buffer.get()
-        assert buf_data[0].shape[0] == self.horizon * self.num_env
+        assert buf_data[0].shape[0] == self.minibatch
 
-        [obs, actions, advs, rets] = buf_data
+        indices = np.arange(self.minibatch)
+        np.random.shuffle(indices)
+        slices = [arr[indices] for arr in buf_data]
+        [obs, actions, advs, rets, logprobs, values] = slices
         # advs_raw = rets - values
-        advs = (advs - np.mean(advs)) / \
-            (np.std(advs) + 1e-8)
+        advs = (advs - np.mean(advs)) / (np.std(advs) + 1e-8)
         lr = self.lr if self.fixed_lr else self.lr * frac
         inputs = {
             self.all_phs[0]: obs,
             self.all_phs[1]: actions,
             self.all_phs[2]: advs,
             self.all_phs[3]: rets,
-            self.all_phs[4]: lr,
+            self.all_phs[4]: logprobs,
+            self.all_phs[5]: values,
+            self.all_phs[6]: lr,
         }
 
-        pi_loss, vf_loss, entropy, _ = self.sess.run(
-            [self.pi_loss, self.vf_loss, self.entropy,
+        pi_loss, vf_loss, entropy, kl, _ = self.sess.run(
+            [self.pi_loss, self.vf_loss,
+             self.entropy, self.approx_kl,
              self.train_op],
             feed_dict=inputs)
 
-        kl = 0.
         return [pi_loss, vf_loss, entropy, kl]
 
     def select_action(self, obs, deterministic=False):
-        [mu, pi, v] = self.sess.run(
+        [mu, pi, v, logp_pi] = self.sess.run(
             self.get_action_ops, feed_dict={self.ob1_ph: obs.reshape(self.num_env, -1)})
-        self.extra_info = [v]
+        self.extra_info = [v, logp_pi]
         ac = mu if deterministic else pi
         return pi
 
@@ -200,9 +213,9 @@ class A2CAgent():
             self.v1, feed_dict={self.ob1_ph: obs.reshape(self.num_env, -1)})
 
     def store_transition(self, obs, action, reward, done):
-        [v] = self.extra_info
+        [v, logp_pi] = self.extra_info
         self.buffer.store(obs, action, reward, done,
-                          v)
+                          v, logp_pi)
 
     def _build_saver(self):
         params = self._get_var_list('pi') + self._get_var_list('vf')
