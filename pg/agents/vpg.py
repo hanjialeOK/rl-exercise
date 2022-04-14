@@ -3,7 +3,7 @@ import tensorflow as tf
 import tensorflow_probability as tfp
 import os
 
-import pg.buffer.vpgbuffer as Buffer
+import pg.buffer.gaebuffer as Buffer
 
 
 def tf_ortho_init(scale):
@@ -67,7 +67,7 @@ class VPGAgent():
                  lr=3e-4, train_iters=10, ent_coef=0.0,
                  vf_coef=0.5, max_grad_norm=0.5, horizon=2048,
                  minibatch=64, gamma=0.99, lam=0.95,
-                 grad_clip=True, fixed_lr=False):
+                 fixed_lr=True):
         self.sess = sess
         self.obs_dim = obs_dim
         self.act_dim = act_dim
@@ -79,10 +79,9 @@ class VPGAgent():
         self.ent_coef = ent_coef
         self.vf_coef = vf_coef
         self.max_grad_norm = max_grad_norm
-        self.grad_clip = grad_clip
         self.fixed_lr = fixed_lr
 
-        self.buffer = Buffer.VPGBuffer(
+        self.buffer = Buffer.GAEBuffer(
             obs_dim, act_dim, size=horizon, num_env=num_env, gamma=gamma, lam=lam)
         self._build_network()
         self._build_train_op()
@@ -111,10 +110,14 @@ class VPGAgent():
             shape=[self.minibatch, ], dtype=tf.float32, name="adv_ph")
         ret_ph = tf.compat.v1.placeholder(
             shape=[self.minibatch, ], dtype=tf.float32, name="ret_ph")
+        logp_old_ph = tf.compat.v1.placeholder(
+            shape=[self.minibatch, ], dtype=tf.float32, name="logp_old_ph")
+        val_ph = tf.compat.v1.placeholder(
+            shape=[self.minibatch, ], dtype=tf.float32, name="val_ph")
         lr_ph = tf.compat.v1.placeholder(
             shape=[], dtype=tf.float32, name="lr_ph")
 
-        all_phs = [obs_ph, act_ph, adv_ph, ret_ph, lr_ph]
+        all_phs = [obs_ph, act_ph, adv_ph, ret_ph, logp_old_ph, val_ph, lr_ph]
 
         # Probability distribution
         logstd = tf.compat.v1.get_variable(
@@ -126,8 +129,9 @@ class VPGAgent():
         mu1 = self.actor(ob1_ph)
         dist1 = tfp.distributions.Normal(loc=mu1, scale=std)
         pi1 = dist1.sample()
+        logp_pi1 = tf.reduce_sum(dist1.log_prob(pi1), axis=1)
         v1 = self.critic(ob1_ph)
-        get_action_ops = [mu1, pi1, v1]
+        get_action_ops = [mu1, pi1, v1, logp_pi1]
 
         # Train batch data
         mu = self.actor(obs_ph)
@@ -137,24 +141,25 @@ class VPGAgent():
 
         v = self.critic(obs_ph)
 
-        # A2C objectives
+        # VPG objectives
         pi_loss = -tf.reduce_mean(adv_ph * logp_a)
         vf_loss = 0.5 * tf.reduce_mean(tf.square(v - ret_ph))
+
+        # Usefull Infos
+        approx_kl = 0.5 * tf.reduce_mean(tf.square(logp_old_ph - logp_a))
 
         # Total loss
         loss = pi_loss - entropy * self.ent_coef + vf_loss * self.vf_coef
 
         # Optimizers
-        optimizer = tf.train.AdamOptimizer(learning_rate=lr_ph, epsilon=1e-5)
-        params = self._get_var_list('pi') + self._get_var_list('vf')
-        grads_and_vars = optimizer.compute_gradients(loss, var_list=params)
-        grads, vars = zip(*grads_and_vars)
-        if self.grad_clip:
-            grads, _grad_norm = tf.clip_by_global_norm(
-                grads, self.max_grad_norm)
-        grads_and_vars = list(zip(grads, vars))
-
-        train_op = optimizer.apply_gradients(grads_and_vars)
+        pi_optimizer = tf.train.AdamOptimizer(
+            learning_rate=lr_ph, epsilon=1e-5)
+        vf_optimizer = tf.train.AdamOptimizer(
+            learning_rate=lr_ph, epsilon=1e-5)
+        pi_params = self._get_var_list('pi')
+        vf_params = self._get_var_list('vf')
+        pi_train_op = pi_optimizer.minimize(pi_loss, var_list=pi_params)
+        vf_train_op = vf_optimizer.minimize(vf_loss, var_list=vf_params)
 
         self.ob1_ph = ob1_ph
         self.all_phs = all_phs
@@ -163,7 +168,9 @@ class VPGAgent():
         self.pi_loss = pi_loss
         self.vf_loss = vf_loss
         self.entropy = entropy
-        self.train_op = train_op
+        self.approx_kl = approx_kl
+        self.pi_train_op = pi_train_op
+        self.vf_train_op = vf_train_op
 
     def update(self, frac):
         buf_data = self.buffer.get()
@@ -175,7 +182,8 @@ class VPGAgent():
         kl_buf = []
 
         indices = np.arange(self.horizon * self.num_env)
-        for _ in range(self.train_iters):
+
+        for i in range(self.train_iters):
             # Randomize the indexes
             np.random.shuffle(indices)
             # 0 to batch_size with batch_train_size step
@@ -183,35 +191,41 @@ class VPGAgent():
                 end = start + self.minibatch
                 mbinds = indices[start:end]
                 slices = [arr[mbinds] for arr in buf_data]
-                [obs, actions, advs, rets] = slices
+                [obs, actions, advs, rets, logprobs, values] = slices
                 # advs_raw = rets - values
-                advs = (advs - np.mean(advs)) / \
-                    (np.std(advs) + 1e-8)
+                advs = (advs - np.mean(advs)) / (np.std(advs) + 1e-8)
                 lr = self.lr if self.fixed_lr else self.lr * frac
                 inputs = {
                     self.all_phs[0]: obs,
                     self.all_phs[1]: actions,
                     self.all_phs[2]: advs,
                     self.all_phs[3]: rets,
-                    self.all_phs[4]: lr,
+                    self.all_phs[4]: logprobs,
+                    self.all_phs[5]: values,
+                    self.all_phs[6]: lr,
                 }
 
-                pi_loss, vf_loss, entropy, _ = self.sess.run(
-                    [self.pi_loss, self.vf_loss, self.entropy,
-                     self.train_op],
+                if i == 1:
+                    pi_loss, entropy, kl, _ = self.sess.run(
+                        [self.pi_loss, self.entropy, self.approx_kl,
+                         self.pi_train_op],
+                        feed_dict=inputs)
+                    pi_loss_buf.append(pi_loss)
+                    entropy_buf.append(entropy)
+                    kl_buf.append(kl)
+
+                vf_loss, _ = self.sess.run(
+                    [self.vf_loss, self.vf_train_op],
                     feed_dict=inputs)
-                pi_loss_buf.append(pi_loss)
                 vf_loss_buf.append(vf_loss)
-                entropy_buf.append(entropy)
-                kl_buf.append(0.)
 
         return [np.mean(pi_loss_buf), np.mean(vf_loss_buf),
                 np.mean(entropy_buf), np.mean(kl_buf)]
 
     def select_action(self, obs, deterministic=False):
-        [mu, pi, v] = self.sess.run(
+        [mu, pi, v, logp_pi] = self.sess.run(
             self.get_action_ops, feed_dict={self.ob1_ph: obs.reshape(self.num_env, -1)})
-        self.extra_info = [v]
+        self.extra_info = [v, logp_pi]
         ac = mu if deterministic else pi
         return pi
 
@@ -220,9 +234,9 @@ class VPGAgent():
             self.v1, feed_dict={self.ob1_ph: obs.reshape(self.num_env, -1)})
 
     def store_transition(self, obs, action, reward, done):
-        [v] = self.extra_info
+        [v, logp_pi] = self.extra_info
         self.buffer.store(obs, action, reward, done,
-                          v)
+                          v, logp_pi)
 
     def _build_saver(self):
         params = self._get_var_list('pi') + self._get_var_list('vf')
