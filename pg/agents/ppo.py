@@ -3,6 +3,7 @@ import tensorflow as tf
 import tensorflow_probability as tfp
 import os
 
+from pg.agents.base import BaseAgent
 import pg.buffer.gaebuffer as Buffer
 
 
@@ -10,7 +11,7 @@ def tf_ortho_init(scale):
     return tf.keras.initializers.Orthogonal(scale)
 
 
-class PPOAgent():
+class PPOAgent(BaseAgent):
     def __init__(self, sess, obs_dim, act_dim, num_env=1,
                  clip_ratio=0.2, lr=3e-4, train_iters=10, target_kl=0.01,
                  ent_coef=0.0, vf_coef=0.5, max_grad_norm=0.5,
@@ -37,14 +38,6 @@ class PPOAgent():
             obs_dim, act_dim, size=horizon, num_env=num_env, gamma=gamma, lam=lam)
         self._build_train_op()
         self.saver = self._build_saver()
-
-    # Note: Required to be called after _build_train_op(), otherwise return []
-    def _get_var_list(self, name='pi'):
-        scope = tf.compat.v1.get_default_graph().get_name_scope()
-        vars = tf.compat.v1.get_collection(
-            tf.compat.v1.GraphKeys.TRAINABLE_VARIABLES,
-            scope=os.path.join(scope, name))
-        return vars
 
     def Actor(self, obs):
         activation_fn = tf.tanh
@@ -230,24 +223,3 @@ class PPOAgent():
         [v, logp_pi] = self.extra_info
         self.buffer.store(obs, action, reward, done,
                           v, logp_pi)
-
-    def _build_saver(self):
-        pi_params = self._get_var_list('pi')
-        vf_params = self._get_var_list('vf')
-        return tf.compat.v1.train.Saver(var_list=pi_params + vf_params,
-                                        max_to_keep=4)
-
-    def bundle(self, checkpoint_dir, epoch):
-        if not os.path.exists(checkpoint_dir):
-            raise
-        self.saver.save(
-            self.sess,
-            os.path.join(checkpoint_dir, 'tf_ckpt'),
-            global_step=epoch)
-
-    def unbundle(self, checkpoint_dir, epoch=None):
-        if not os.path.exists(checkpoint_dir):
-            raise
-        self.saver.restore(
-            self.sess,
-            os.path.join(checkpoint_dir, f'tf_ckpt-{epoch}'))

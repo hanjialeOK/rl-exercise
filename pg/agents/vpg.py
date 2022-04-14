@@ -3,6 +3,7 @@ import tensorflow as tf
 import tensorflow_probability as tfp
 import os
 
+from pg.agents.base import BaseAgent
 import pg.buffer.gaebuffer as Buffer
 
 
@@ -56,7 +57,7 @@ class CriticMLP(tf.keras.Model):
         return tf.squeeze(x, axis=1)
 
 
-class VPGAgent():
+class VPGAgent(BaseAgent):
     """
     The difference between Vanilla Policy Gradient (VPG) with a baseline as value
     function and Advantage Actor-Critic (A2C) is very similar to the difference
@@ -86,14 +87,6 @@ class VPGAgent():
         self._build_network()
         self._build_train_op()
         self.saver = self._build_saver()
-
-    # Note: Required to be called after _build_train_op(), otherwise return []
-    def _get_var_list(self, name='pi'):
-        scope = tf.compat.v1.get_default_graph().get_name_scope()
-        vars = tf.compat.v1.get_collection(
-            tf.compat.v1.GraphKeys.TRAINABLE_VARIABLES,
-            scope=os.path.join(scope, name))
-        return vars
 
     def _build_network(self):
         self.actor = ActorMLP(self.act_dim, name='pi')
@@ -237,23 +230,3 @@ class VPGAgent():
         [v, logp_pi] = self.extra_info
         self.buffer.store(obs, action, reward, done,
                           v, logp_pi)
-
-    def _build_saver(self):
-        params = self._get_var_list('pi') + self._get_var_list('vf')
-        return tf.compat.v1.train.Saver(var_list=params,
-                                        max_to_keep=4)
-
-    def bundle(self, checkpoint_dir, epoch):
-        if not os.path.exists(checkpoint_dir):
-            raise
-        self.saver.save(
-            self.sess,
-            os.path.join(checkpoint_dir, 'tf_ckpt'),
-            global_step=epoch)
-
-    def unbundle(self, checkpoint_dir, epoch=None):
-        if not os.path.exists(checkpoint_dir):
-            raise
-        self.saver.restore(
-            self.sess,
-            os.path.join(checkpoint_dir, f'tf_ckpt-{epoch}'))
