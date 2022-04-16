@@ -130,7 +130,8 @@ class VPGAgent(BaseAgent):
         mu = self.actor(obs_ph)
         dist = tfp.distributions.Normal(loc=mu, scale=std)
         logp_a = tf.reduce_sum(dist.log_prob(act_ph), axis=1)
-        entropy = tf.reduce_mean(dist.entropy())
+        entropy = tf.reduce_sum(dist.entropy(), axis=1)
+        meanent = tf.reduce_mean(entropy)
 
         v = self.critic(obs_ph)
 
@@ -142,7 +143,7 @@ class VPGAgent(BaseAgent):
         approx_kl = 0.5 * tf.reduce_mean(tf.square(logp_old_ph - logp_a))
 
         # Total loss
-        loss = pi_loss - entropy * self.ent_coef + vf_loss * self.vf_coef
+        loss = pi_loss - meanent * self.ent_coef + vf_loss * self.vf_coef
 
         # Optimizers
         pi_optimizer = tf.train.AdamOptimizer(
@@ -160,7 +161,7 @@ class VPGAgent(BaseAgent):
         self.v1 = v1
         self.pi_loss = pi_loss
         self.vf_loss = vf_loss
-        self.entropy = entropy
+        self.entropy = meanent
         self.approx_kl = approx_kl
         self.pi_train_op = pi_train_op
         self.vf_train_op = vf_train_op

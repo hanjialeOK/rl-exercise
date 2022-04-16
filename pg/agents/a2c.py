@@ -129,7 +129,8 @@ class A2CAgent(BaseAgent):
         mu = self.actor(obs_ph)
         dist = tfp.distributions.Normal(loc=mu, scale=std)
         logp_a = tf.reduce_sum(dist.log_prob(act_ph), axis=1)
-        entropy = tf.reduce_mean(dist.entropy())
+        entropy = tf.reduce_sum(dist.entropy(), axis=1)
+        meanent = tf.reduce_mean(entropy)
 
         v = self.critic(obs_ph)
 
@@ -141,7 +142,7 @@ class A2CAgent(BaseAgent):
         approx_kl = 0.5 * tf.reduce_mean(tf.square(logp_old_ph - logp_a))
 
         # Total loss
-        loss = pi_loss - entropy * self.ent_coef + vf_loss * self.vf_coef
+        loss = pi_loss - meanent * self.ent_coef + vf_loss * self.vf_coef
 
         # Optimizers
         optimizer = tf.train.AdamOptimizer(learning_rate=lr_ph, epsilon=1e-5)
@@ -161,7 +162,7 @@ class A2CAgent(BaseAgent):
         self.v1 = v1
         self.pi_loss = pi_loss
         self.vf_loss = vf_loss
-        self.entropy = entropy
+        self.entropy = meanent
         self.approx_kl = approx_kl
         self.train_op = train_op
 

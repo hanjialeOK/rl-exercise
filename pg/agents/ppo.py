@@ -109,7 +109,8 @@ class PPOAgent(BaseAgent):
         mu = self.Actor(obs_ph)
         dist = tfp.distributions.Normal(loc=mu, scale=std)
         logp_a = tf.reduce_sum(dist.log_prob(act_ph), axis=1)
-        entropy = tf.reduce_mean(dist.entropy())
+        entropy = tf.reduce_sum(dist.entropy(), axis=1)
+        meanent = tf.reduce_mean(entropy)
 
         v = self.Critic(obs_ph)
 
@@ -138,7 +139,7 @@ class PPOAgent(BaseAgent):
         clipfrac = tf.reduce_mean(tf.cast(clipped, tf.float32))
 
         # Total loss
-        loss = pi_loss - entropy * self.ent_coef + vf_loss * self.vf_coef
+        loss = pi_loss - meanent * self.ent_coef + vf_loss * self.vf_coef
 
         # Optimizers
         optimizer = tf.train.AdamOptimizer(learning_rate=lr_ph, epsilon=1e-5)
@@ -159,7 +160,7 @@ class PPOAgent(BaseAgent):
         self.pi_loss = pi_loss
         self.vf_loss = vf_loss
         self.approx_kl = approx_kl
-        self.entropy = entropy
+        self.entropy = meanent
         self.clipfrac = clipfrac
         self.train_op = train_op
 
