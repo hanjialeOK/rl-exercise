@@ -27,33 +27,33 @@ for i in $(seq 1 ${LEN})
 do
     echo "${CYAN}${BOLD}Running ${ENV[i]} (${i}/${LEN}) for six experiments...${RESET}"
     CUDA_VISIBLE_DEVICES=0 PYTHONWARNINGS=ignore python -m baselines.run \
-        --alg=${ALGO} --env=${ENV} --num_timesteps=1e6 --num_env=1\
-        --log_path=/data/hanjl/my_results/${ENV}/${DIR_NAME}/seed0 \
+        --alg=${ALGO} --env=${ENV[i]} --num_timesteps=1e6 --num_env=1\
+        --log_path=/data/hanjl/my_results/${ENV[i]}/${DIR_NAME}/seed0 \
         > /dev/null &
     sleep 5
     CUDA_VISIBLE_DEVICES=0 PYTHONWARNINGS=ignore python -m baselines.run \
-        --alg=${ALGO} --env=${ENV} --num_timesteps=1e6 --num_env=1\
-        --log_path=/data/hanjl/my_results/${ENV}/${DIR_NAME}/seed1 \
+        --alg=${ALGO} --env=${ENV[i]} --num_timesteps=1e6 --num_env=1\
+        --log_path=/data/hanjl/my_results/${ENV[i]}/${DIR_NAME}/seed1 \
         > /dev/null &
     sleep 5
     CUDA_VISIBLE_DEVICES=0 PYTHONWARNINGS=ignore python -m baselines.run \
-        --alg=${ALGO} --env=${ENV} --num_timesteps=1e6 --num_env=1\
-        --log_path=/data/hanjl/my_results/${ENV}/${DIR_NAME}/seed2 \
+        --alg=${ALGO} --env=${ENV[i]} --num_timesteps=1e6 --num_env=1\
+        --log_path=/data/hanjl/my_results/${ENV[i]}/${DIR_NAME}/seed2 \
         > /dev/null &
     sleep 5
     CUDA_VISIBLE_DEVICES=1 PYTHONWARNINGS=ignore python -m baselines.run \
-        --alg=${ALGO} --env=${ENV} --num_timesteps=1e6 --num_env=1\
-        --log_path=/data/hanjl/my_results/${ENV}/${DIR_NAME}/seed3 \
+        --alg=${ALGO} --env=${ENV[i]} --num_timesteps=1e6 --num_env=1\
+        --log_path=/data/hanjl/my_results/${ENV[i]}/${DIR_NAME}/seed3 \
         > /dev/null &
     sleep 5
     CUDA_VISIBLE_DEVICES=1 PYTHONWARNINGS=ignore python -m baselines.run \
-        --alg=${ALGO} --env=${ENV} --num_timesteps=1e6 --num_env=1\
-        --log_path=/data/hanjl/my_results/${ENV}/${DIR_NAME}/seed4 \
+        --alg=${ALGO} --env=${ENV[i]} --num_timesteps=1e6 --num_env=1\
+        --log_path=/data/hanjl/my_results/${ENV[i]}/${DIR_NAME}/seed4 \
         > /dev/null &
     sleep 5
     CUDA_VISIBLE_DEVICES=1 PYTHONWARNINGS=ignore python -m baselines.run \
-        --alg=${ALGO} --env=${ENV} --num_timesteps=1e6 --num_env=1\
-        --log_path=/data/hanjl/my_results/${ENV}/${DIR_NAME}/seed5 \
+        --alg=${ALGO} --env=${ENV[i]} --num_timesteps=1e6 --num_env=1\
+        --log_path=/data/hanjl/my_results/${ENV[i]}/${DIR_NAME}/seed5 \
         > /dev/null &
     # Waiting for all subprocess finished.
     wait
