@@ -1,84 +1,92 @@
 import numpy as np
 import tensorflow as tf
+import tensorflow_probability as tfp
 import os
 
-import pg.buffer.vpgbuffer as Buffer
+from pg.agents.base import BaseAgent
+import pg.buffer.gaebuffer as Buffer
 
 from termcolor import cprint
 
 EPS = 1e-8
 
 
-def cg(Ax, b, cg_iters):
+def cg(f_Ax, b, cg_iters=10, callback=None, verbose=False, residual_tol=1e-10):
     """
-    Conjugate gradient algorithm
+    Demmel p 312
     """
-    x = np.zeros_like(b)
+    p = b.copy()
     r = b.copy()
-    p = r.copy()
-    r_dot_old = np.dot(r, r)
-    for _ in range(cg_iters):
-        z = Ax(p)
-        alpha = r_dot_old / (np.dot(p, z) + EPS)
-        x += alpha * p
-        r -= alpha * z
-        r_dot_new = np.dot(r, r)
-        p = r + (r_dot_new / r_dot_old) * p
-        r_dot_old = r_dot_new
+    x = np.zeros_like(b)
+    rdotr = r.dot(r)
+
+    fmtstr = "%10i %10.3g %10.3g"
+    titlestr = "%10s %10s %10s"
+    if verbose:
+        print(titlestr % ("iter", "residual norm", "soln norm"))
+
+    for i in range(cg_iters):
+        if callback is not None:
+            callback(x)
+        if verbose:
+            print(fmtstr % (i, rdotr, np.linalg.norm(x)))
+        z = f_Ax(p)
+        v = rdotr / p.dot(z)
+        x += v*p
+        r -= v*z
+        newrdotr = r.dot(r)
+        mu = newrdotr/rdotr
+        p = r + mu*p
+
+        rdotr = newrdotr
+        if rdotr < residual_tol:
+            break
+
+    if callback is not None:
+        callback(x)
+    if verbose:
+        print(fmtstr % (i+1, rdotr, np.linalg.norm(x)))
     return x
 
 
-def flat_concat(xs):
-    return tf.concat([tf.reshape(x, (-1,)) for x in xs], axis=0)
+def flat(var_list):
+    return tf.concat([tf.reshape(v, (-1,)) for v in var_list], axis=0)
 
 
-def flat_grad(f, params):
-    return flat_concat(tf.compat.v1.gradients(ys=f, xs=params))
+def flatgrad(loss, var_list):
+    return flat(tf.compat.v1.gradients(ys=loss, xs=var_list))
 
 
-def assign_params_from_flat(new_params_flated, params):
-    # the 'int' is important for scalars
-    def flat_size(p): return int(np.prod(p.shape.as_list()))
-    splits = tf.split(new_params_flated, [flat_size(p) for p in params])
-    new_params = [tf.reshape(p_new, p.shape)
-                  for p_new, p in zip(splits, params)]
-    return tf.group(
-        [tf.compat.v1.assign(p, p_new) for p, p_new in zip(params, new_params)])
+def setfromflat(var_list, theta):
+    shapes = [v.get_shape().as_list() for v in var_list]
+    assigns = []
+    start = 0
+    for (v, shape) in zip(var_list, shapes):
+        size = int(np.prod(shape))
+        new = theta[start:start+size]
+        assigns.append(tf.assign(v, tf.reshape(new, shape)))
+        start += size
+    return assigns
 
 
-def gaussian_likelihood(x, mu, logstd):
-    pre_sum = -0.5 * (((x - mu) / (tf.exp(logstd) + EPS)) ** 2 +
-                      2 * logstd + np.log(2 * np.pi))
-    return tf.reduce_sum(pre_sum, axis=1)
-
-
-def diagonal_gaussian_kl(mu0, logstd0, mu1, logstd1):
-    """
-    tf symbol for mean KL divergence between two batches of diagonal gaussian distributions,
-    where distributions are specified by means and log stds.
-    (https://en.wikipedia.org/wiki/Kullback-Leibler_divergence#Multivariate_normal_distributions)
-    """
-    var0, var1 = tf.exp(2 * logstd0), tf.exp(2 * logstd1)
-    pre_sum = 0.5*(((mu1 - mu0)**2 + var0)/(var1 + EPS) - 1) + \
-        logstd1 - logstd0
-    all_kls = tf.reduce_sum(pre_sum, axis=1)
-    return tf.reduce_mean(all_kls)
+def tf_ortho_init(scale):
+    return tf.keras.initializers.Orthogonal(scale)
 
 
 class ActorMLP(tf.keras.Model):
     def __init__(self, ac_dim, name=None):
         super(ActorMLP, self).__init__(name=name)
         activation_fn = tf.keras.activations.tanh
-        kernel_initializer = tf.initializers.orthogonal
+        kernel_initializer = None
         self.dense1 = tf.keras.layers.Dense(
-            64, activation=activation_fn,
-            kernel_initializer=kernel_initializer, name='fc1')
+            32, activation=activation_fn,
+            kernel_initializer=tf_ortho_init(np.sqrt(2)), name='fc1')
         self.dense2 = tf.keras.layers.Dense(
-            64, activation=activation_fn,
-            kernel_initializer=kernel_initializer, name='fc2')
+            32, activation=activation_fn,
+            kernel_initializer=tf_ortho_init(np.sqrt(2)), name='fc2')
         self.dense3 = tf.keras.layers.Dense(
-            ac_dim[0],
-            kernel_initializer=kernel_initializer, name='fc3')
+            ac_dim[0], activation=None,
+            kernel_initializer=tf_ortho_init(0.01), name='fc3')
 
     def call(self, state):
         x = tf.cast(state, tf.float32)
@@ -92,15 +100,16 @@ class CriticMLP(tf.keras.Model):
     def __init__(self, name=None):
         super(CriticMLP, self).__init__(name=name)
         activation_fn = tf.keras.activations.tanh
-        kernel_initializer = tf.initializers.orthogonal
+        kernel_initializer = None
         self.dense1 = tf.keras.layers.Dense(
-            64, activation=activation_fn,
-            kernel_initializer=kernel_initializer, name='fc1')
+            32, activation=activation_fn,
+            kernel_initializer=tf_ortho_init(np.sqrt(2)), name='fc1')
         self.dense2 = tf.keras.layers.Dense(
-            64, activation=activation_fn,
-            kernel_initializer=kernel_initializer, name='fc2')
+            32, activation=activation_fn,
+            kernel_initializer=tf_ortho_init(np.sqrt(2)), name='fc2')
         self.dense3 = tf.keras.layers.Dense(
-            1, kernel_initializer=kernel_initializer, name='fc3')
+            1, activation=None,
+            kernel_initializer=tf_ortho_init(1.0), name='fc3')
 
     def call(self, state):
         x = tf.cast(state, tf.float32)
@@ -110,45 +119,37 @@ class CriticMLP(tf.keras.Model):
         return tf.squeeze(x, axis=1)
 
 
-class TRPOAgent():
-    def __init__(self, sess, obs_dim, act_dim, max_kl=0.01, vf_lr=1e-3,
-                 train_v_iters=80, damping_coeff=0.1, cg_iters=10,
-                 backtrack_iters=10, backtrack_coeff=0.8,
-                 horizon=1000, gamma=0.99, lam=0.95):
+class TRPOAgent(BaseAgent):
+    def __init__(self, sess, obs_dim, act_dim, num_env=1,
+                 max_kl=0.01, vf_lr=1e-3, train_vf_iters=5, ent_coef=0.0,
+                 cg_damping=0.1, cg_iters=10, horizon=1024, minibatch=64,
+                 gamma=0.99, lam=0.98):
         self.sess = sess
         self.obs_dim = obs_dim
         self.act_dim = act_dim
+        self.num_env = num_env
         self.max_kl = max_kl
         self.vf_lr = vf_lr
-        self.train_v_iters = train_v_iters
-        self.damping_coeff = damping_coeff
+        self.train_vf_iters = train_vf_iters
+        self.ent_coef = ent_coef
+        self.cg_damping = cg_damping
         self.cg_iters = cg_iters
-        self.backtrack_iters = backtrack_iters
-        self.backtrack_coeff = backtrack_coeff
         self.horizon = horizon
+        self.minibatch = minibatch * num_env
 
         self.buffer = Buffer.TRPOBuffer(
-            obs_dim, act_dim, size=horizon, gamma=gamma, lam=lam)
+            obs_dim, act_dim, size=horizon, num_env=num_env, gamma=gamma, lam=lam)
         self._build_network()
-        [self.obs_ph, self.all_phs, self.x_ph, self.param_ph,
-         self.get_action_ops, self.d_kl,
-         self.pi_grads_flatted, self.pi_params_flatted, self.set_pi_params,
-         self.hvp, self.pi_loss, self.v, self.train_vf] = self._build_train_op()
+        self._build_train_op()
         self.saver = self._build_saver()
-
-    # Note: Required to be called after _build_train_op(), otherwise return []
-    def _get_var_list(self, name='pi'):
-        scope = tf.compat.v1.get_default_graph().get_name_scope()
-        vars = tf.compat.v1.get_collection(
-            tf.compat.v1.GraphKeys.TRAINABLE_VARIABLES,
-            scope=os.path.join(scope, name))
-        return vars
 
     def _build_network(self):
         self.actor = ActorMLP(self.act_dim, name='pi')
         self.critic = CriticMLP(name='vf')
 
     def _build_train_op(self):
+        ob1_ph = tf.compat.v1.placeholder(
+            shape=(self.num_env, ) + self.obs_dim, dtype=tf.float32, name="ob1_ph")
         obs_ph = tf.compat.v1.placeholder(
             shape=(None, ) + self.obs_dim, dtype=tf.float32, name="obs_ph")
         act_ph = tf.compat.v1.placeholder(
@@ -159,143 +160,200 @@ class TRPOAgent():
             shape=[None, ], dtype=tf.float32, name="ret_ph")
         logp_old_ph = tf.compat.v1.placeholder(
             shape=[None, ], dtype=tf.float32, name="logp_old_ph")
-        old_mu_ph = tf.compat.v1.placeholder(
-            shape=(None, ) + self.act_dim, dtype=tf.float32, name='old_mu_ph')
-        old_logstd_ph = tf.compat.v1.placeholder(
-            shape=(None, ) + self.act_dim, dtype=tf.float32, name='old_logstd_ph')
+        val_ph = tf.compat.v1.placeholder(
+            shape=[None, ], dtype=tf.float32, name="val_ph")
+        mu_old_ph = tf.compat.v1.placeholder(
+            shape=(None, ) + self.act_dim, dtype=tf.float32, name='mu_old_ph')
+        logstd_old_ph = tf.compat.v1.placeholder(
+            shape=(1, ) + self.act_dim, dtype=tf.float32, name='logstd_old_ph')
+
+        all_phs = [obs_ph, act_ph, adv_ph, ret_ph, logp_old_ph, val_ph,
+                   mu_old_ph, logstd_old_ph]
 
         # Probability distribution
-        mu = self.actor(obs_ph)
         logstd = tf.compat.v1.get_variable(
-            name='pi/logstd',
-            initializer=-0.5 * np.ones(self.act_dim, dtype=np.float32))
+            name='pi/logstd', shape=(1, self.act_dim[0]),
+            initializer=tf.zeros_initializer)
         std = tf.exp(logstd)
-        pi = mu + tf.random.normal(tf.shape(mu)) * std
-        logp = gaussian_likelihood(act_ph, mu, logstd)
-        logp_pi = gaussian_likelihood(pi, mu, logstd)
-        d_kl = diagonal_gaussian_kl(
-            mu, logstd, old_mu_ph, old_logstd_ph)
 
-        # State value
+        # Interative with env
+        mu1 = self.actor(ob1_ph)
+        dist1 = tfp.distributions.Normal(loc=mu1, scale=std)
+        pi1 = dist1.sample()
+        logp_pi1 = tf.reduce_sum(dist1.log_prob(pi1), axis=1)
+        v1 = self.critic(ob1_ph)
+        get_action_ops = [mu1, pi1, v1, logp_pi1, logstd]
+
+        # Train batch data
+        mu = self.actor(obs_ph)
+        dist = tfp.distributions.Normal(loc=mu, scale=std)
+        logp_a = tf.reduce_sum(dist.log_prob(act_ph), axis=1)
+        entropy = tf.reduce_sum(dist.entropy(), axis=1)
+        meanent = tf.reduce_mean(entropy)
+
+        std_old = tf.exp(logstd_old_ph)
+        dist_old = tfp.distributions.Normal(loc=mu_old_ph, scale=std_old)
+        kl = tf.reduce_sum(dist.kl_divergence(dist_old), axis=1)
+        meankl = tf.reduce_mean(kl)
+
         v = self.critic(obs_ph)
 
-        get_action_ops = [pi, v, logp_pi, mu, logstd]
+        # TRPO objectives
+        ratio = tf.exp(logp_a - logp_old_ph)
+        surrgain = tf.reduce_mean(ratio * adv_ph)
+        vf_loss = 0.5 * tf.reduce_mean(tf.square(v - ret_ph))
+        optimgain = surrgain + self.ent_coef * meanent
 
-        all_phs = [obs_ph, act_ph, adv_ph, ret_ph,
-                   logp_old_ph, old_mu_ph, old_logstd_ph]
-
-        # TRPO losses
-        ratio = tf.exp(logp - logp_old_ph)  # pi(a|s) / pi_old(a|s)
-        pi_loss = -tf.reduce_mean(ratio * adv_ph)
-        v_loss = tf.reduce_mean((ret_ph - v)**2)
-
-        # Optimizer for value funtion
-        train_vf = tf.compat.v1.train.AdamOptimizer(
-            learning_rate=self.vf_lr).minimize(v_loss)
+        # Value function optimizer
+        vf_optimizer = tf.train.AdamOptimizer(
+            learning_rate=self.vf_lr, epsilon=1e-5)
+        vf_params = self._get_var_list('vf')
+        vf_train_op = vf_optimizer.minimize(vf_loss, var_list=vf_params)
 
         # Symbols needed for CG solver
         pi_params = self._get_var_list('pi')
-        pi_grads_flatted = flat_grad(pi_loss, pi_params)
-        kl_grads_flatted = flat_grad(d_kl, pi_params)
-        x_ph = tf.compat.v1.placeholder(shape=kl_grads_flatted.shape,
-                                        dtype=tf.float32, name='x_ph')
-        hvp = flat_grad(
-            tf.reduce_sum(kl_grads_flatted * x_ph), pi_params)
-        if self.damping_coeff > 0:
-            hvp += self.damping_coeff * x_ph
+        surr_grads_flatted = flatgrad(optimgain, pi_params)
+        kl_grads_flatted = flatgrad(meankl, pi_params)
+        tangent_ph = tf.compat.v1.placeholder(
+            shape=kl_grads_flatted.shape,
+            dtype=tf.float32, name='tangent_ph')
+        fvpbase = flatgrad(tf.reduce_sum(
+            kl_grads_flatted * tangent_ph), pi_params)
+        fvp = fvpbase + self.cg_damping * tangent_ph
 
         # Symbols for getting and setting params
-        pi_params_flatted = flat_concat(pi_params)
-        param_ph = tf.compat.v1.placeholder(
+        pi_params_flatted = flat(pi_params)
+        newv_ph = tf.compat.v1.placeholder(
             shape=pi_params_flatted.shape,
-            dtype=tf.float32, name="param_ph")
-        set_pi_params = assign_params_from_flat(
-            param_ph, pi_params)
+            dtype=tf.float32, name="newv_ph")
+        set_pi_params = setfromflat(pi_params, newv_ph)
 
-        return [obs_ph, all_phs, x_ph, param_ph,
-                get_action_ops, d_kl,
-                pi_grads_flatted,
-                pi_params_flatted, set_pi_params,
-                hvp, pi_loss, v, train_vf]
+        self.ob1_ph = ob1_ph
+        self.all_phs = all_phs
+        self.tangent_ph = tangent_ph
+        self.newv_ph = newv_ph
+        self.get_action_ops = get_action_ops
+        self.v1 = v1
+        self.surrgain = surrgain
+        self.vf_loss = vf_loss
+        self.optimgain = optimgain
+        self.kl = meankl
+        self.entropy = meanent
+        self.vf_train_op = vf_train_op
+        self.surr_grads_flatted = surr_grads_flatted
+        self.pi_params_flatted = pi_params_flatted
+        self.fvp = fvp
+        self.fvpbase = fvpbase
+        self.set_pi_params = set_pi_params
 
-    def update(self):
-        # Prepare hessian func, gradient eval
+    def update(self, frac=None):
         buf_data = self.buffer.get()
-        inputs = {k: v for k, v in zip(self.all_phs, buf_data)}
+        assert buf_data[0].shape[0] == self.horizon * self.num_env
+        [obs, actions, advs, rets, logprobs, values, mus, logstd] = buf_data
+        advs = (advs - np.mean(advs)) / (np.std(advs) + 1e-8)
+        # debug_data = [obs.reshape([self.horizon, self.num_env, -1]),
+        #               actions,
+        #               advs]
+        # params = self.sess.run(self.pi_params_flatted)
+        # with open('/data/hanjl/debug_data/batch_data.pkl', 'wb') as f:
+        #     pickle.dump(debug_data, f)
+        # with open('/data/hanjl/debug_data/params.pkl', 'wb') as f:
+        #     pickle.dump(params, f)
+        inputs = {
+            self.all_phs[0]: obs,
+            self.all_phs[1]: actions,
+            self.all_phs[2]: advs,
+            self.all_phs[4]: logprobs,
+            self.all_phs[5]: values,
+            self.all_phs[6]: mus,
+            self.all_phs[7]: logstd
+        }
+        fvp_inputs = {
+            self.all_phs[0]: obs[::5],
+            self.all_phs[6]: mus[::5],
+            self.all_phs[7]: logstd
+        }
 
-        def Hx(x): return self.sess.run(
-            self.hvp, feed_dict={**inputs, self.x_ph: x})
+        surrgain_buf = []
+        vf_loss_buf = []
+        entropy_buf = []
+        kl_buf = []
 
-        g, pi_loss_old = self.sess.run(
-            [self.pi_grads_flatted, self.pi_loss], feed_dict=inputs)
+        def fisher_vector_product(x):
+            return self.sess.run(
+                self.fvp, feed_dict={**fvp_inputs, self.tangent_ph: x})
+
+        g = self.sess.run(
+            self.surr_grads_flatted, feed_dict=inputs)
 
         # Core calculations for TRPO or NPG
-        x = cg(Hx, g, self.cg_iters)
-        alpha = np.sqrt(2 * self.max_kl / (np.dot(x, Hx(x)) + EPS))
-        old_params = self.sess.run(self.pi_params_flatted)
-
-        for j in range(self.backtrack_iters):
-            step = self.backtrack_coeff ** j
+        stepdir = cg(fisher_vector_product, g, self.cg_iters)
+        assert np.isfinite(stepdir).all()
+        shs = .5 * np.dot(stepdir, fisher_vector_product(stepdir))
+        lm = np.sqrt(shs / self.max_kl)
+        fullstep = stepdir / lm
+        expectedimprove = np.dot(g, fullstep)
+        oldv = self.sess.run(self.pi_params_flatted)
+        surrbefore = self.sess.run(self.optimgain, feed_dict=inputs)
+        stepsize = 1.0
+        for i in range(10):
+            newv = oldv + fullstep * stepsize
             self.sess.run(self.set_pi_params,
-                          feed_dict={self.param_ph: old_params - alpha * x * step})
-            kl, pi_loss_new = self.sess.run(
-                [self.d_kl, self.pi_loss], feed_dict=inputs)
-            if kl < self.max_kl and pi_loss_new < pi_loss_old:
-                cprint(f'Accepting new params at step {j} of line search.',
-                       color='green', attrs=['bold'])
+                          feed_dict={self.newv_ph: newv})
+            surr, kl, entropy = self.sess.run(
+                [self.optimgain, self.kl, self.entropy], feed_dict=inputs)
+            surrgain_buf.append(surr)
+            kl_buf.append(kl)
+            entropy_buf.append(entropy)
+            improve = surr - surrbefore
+            print("Expected: %.3f Actual: %.3f" % (expectedimprove, improve))
+            if not np.isfinite([surr, kl]).all():
+                print("Got non-finite value of losses -- bad!")
+            elif kl > self.max_kl * 1.5:
+                print("violated KL constraint. shrinking step.")
+            elif improve < 0:
+                print("surrogate didn't improve. shrinking step.")
+            else:
+                print("Stepsize OK!")
                 break
-            if j == self.backtrack_iters - 1:
-                cprint('Line search failed! Keeping old params.',
-                       color='red', attrs=['bold'])
-                self.sess.run(self.set_pi_params,
-                              feed_dict={self.param_ph: old_params})
+            stepsize *= 0.5
+        else:
+            print("couldn't compute a good step")
+            self.sess.run(self.set_pi_params,
+                          feed_dict={self.newv_ph: oldv})
 
-        for _ in range(self.train_v_iters):
-            self.sess.run(self.train_vf, feed_dict=inputs)
+        indices = np.arange(self.horizon * self.num_env)
+        for _ in range(self.train_vf_iters):
+            # Randomize the indexes
+            np.random.shuffle(indices)
+            # 0 to batch_size with batch_train_size step
+            for start in range(0, self.horizon, self.minibatch):
+                end = start + self.minibatch
+                mbinds = indices[start:end]
+                batch_inputs = {
+                    self.all_phs[0]: obs[mbinds],
+                    self.all_phs[3]: rets[mbinds]
+                }
+                vf_loss, _ = self.sess.run(
+                    [self.vf_loss, self.vf_train_op],
+                    feed_dict=batch_inputs)
+                vf_loss_buf.append(vf_loss)
 
-    def _build_saver(self):
-        pi_params = self._get_var_list('pi')
-        vf_params = self._get_var_list('vf')
-        return tf.compat.v1.train.Saver(var_list=pi_params + vf_params,
-                                        max_to_keep=4)
+        return [np.mean(surrgain_buf), np.mean(vf_loss_buf),
+                np.mean(entropy_buf), np.mean(kl_buf), self.vf_lr]
 
-    def select_action(self, obs):
-        [pi, v_t, logp_pi_t, mu_t, logstd_t] = self.sess.run(
-            self.get_action_ops, feed_dict={self.obs_ph: obs.reshape(1, -1)})
-        self.extra_info = [v_t, logp_pi_t, mu_t, logstd_t]
-        return pi[0]
+    def select_action(self, obs, deterministic=False):
+        [mu, pi, v, logp_pi, logstd] = self.sess.run(
+            self.get_action_ops, feed_dict={self.ob1_ph: obs.reshape(self.num_env, -1)})
+        self.extra_info = [v, logp_pi, mu, logstd]
+        ac = mu if deterministic else pi
+        return pi
 
     def compute_v(self, obs):
         return self.sess.run(
-            self.v, feed_dict={self.obs_ph: obs.reshape(1, -1)})
+            self.v1, feed_dict={self.ob1_ph: obs.reshape(self.num_env, -1)})
 
     def store_transition(self, obs, action, reward, done):
-        [v_t, logp_pi_t, mu_t, logstd_t] = self.extra_info
+        [v, logp_pi, mu, logstd] = self.extra_info
         self.buffer.store(obs, action, reward, done,
-                          v_t, logp_pi_t, mu_t, logstd_t)
-
-    def bundle(self, checkpoint_dir, iteration):
-        if not os.path.exists(checkpoint_dir):
-            raise
-        self.actor.save_weights(
-            os.path.join(checkpoint_dir, 'best_model_actor.h5'), save_format='h5')
-        self.critic.save_weights(
-            os.path.join(checkpoint_dir, 'best_model_critic.h5'), save_format='h5')
-        self.saver.save(
-            self.sess,
-            os.path.join(checkpoint_dir, 'tf_ckpt'),
-            global_step=iteration)
-
-    def unbundle(self, checkpoint_dir, iteration=None):
-        if not os.path.exists(checkpoint_dir):
-            raise
-        # Load the best weights without iteraion.
-        if iteration is None:
-            self.actor.load_weights(
-                os.path.join(checkpoint_dir, 'best_model_actor.h5'))
-            self.critic.load_weights(
-                os.path.join(checkpoint_dir, 'best_model_critic.h5'))
-        else:
-            self.saver.restore(
-                self.sess,
-                os.path.join(checkpoint_dir, f'tf_ckpt-{iteration}'))
+                          v, logp_pi, mu, logstd)
