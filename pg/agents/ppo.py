@@ -70,24 +70,22 @@ class PPOAgent(BaseAgent):
             return tf.squeeze(x, axis=1)
 
     def _build_train_op(self):
-        ob1_ph = tf.compat.v1.placeholder(
+        self.ob1_ph = ob1_ph = tf.compat.v1.placeholder(
             shape=(self.num_env, ) + self.obs_dim, dtype=tf.float32, name="ob1_ph")
-        obs_ph = tf.compat.v1.placeholder(
+        self.obs_ph = obs_ph = tf.compat.v1.placeholder(
             shape=(self.minibatch, ) + self.obs_dim, dtype=tf.float32, name="obs_ph")
-        act_ph = tf.compat.v1.placeholder(
+        self.act_ph = act_ph = tf.compat.v1.placeholder(
             shape=(self.minibatch, ) + self.act_dim, dtype=tf.float32, name="act_ph")
-        adv_ph = tf.compat.v1.placeholder(
+        self.adv_ph = adv_ph = tf.compat.v1.placeholder(
             shape=[self.minibatch, ], dtype=tf.float32, name="adv_ph")
-        ret_ph = tf.compat.v1.placeholder(
+        self.ret_ph = ret_ph = tf.compat.v1.placeholder(
             shape=[self.minibatch, ], dtype=tf.float32, name="ret_ph")
-        logp_old_ph = tf.compat.v1.placeholder(
+        self.logp_old_ph = logp_old_ph = tf.compat.v1.placeholder(
             shape=[self.minibatch, ], dtype=tf.float32, name="logp_old_ph")
-        val_ph = tf.compat.v1.placeholder(
+        self.val_ph = val_ph = tf.compat.v1.placeholder(
             shape=[self.minibatch, ], dtype=tf.float32, name="val_ph")
-        lr_ph = tf.compat.v1.placeholder(
+        self.lr_ph = lr_ph = tf.compat.v1.placeholder(
             shape=[], dtype=tf.float32, name="lr_ph")
-
-        all_phs = [obs_ph, act_ph, adv_ph, ret_ph, logp_old_ph, val_ph, lr_ph]
 
         # Probability distribution
         logstd = tf.compat.v1.get_variable(
@@ -153,8 +151,6 @@ class PPOAgent(BaseAgent):
 
         train_op = optimizer.apply_gradients(grads_and_vars)
 
-        self.ob1_ph = ob1_ph
-        self.all_phs = all_phs
         self.get_action_ops = get_action_ops
         self.v1 = v1
         self.pi_loss = pi_loss
@@ -183,17 +179,16 @@ class PPOAgent(BaseAgent):
                 mbinds = indices[start:end]
                 slices = [arr[mbinds] for arr in buf_data]
                 [obs, actions, advs, rets, logprobs, values] = slices
-                # advs_raw = rets - values
                 advs = (advs - np.mean(advs)) / (np.std(advs) + 1e-8)
                 lr = self.lr if self.fixed_lr else self.lr * frac
                 inputs = {
-                    self.all_phs[0]: obs,
-                    self.all_phs[1]: actions,
-                    self.all_phs[2]: advs,
-                    self.all_phs[3]: rets,
-                    self.all_phs[4]: logprobs,
-                    self.all_phs[5]: values,
-                    self.all_phs[6]: lr,
+                    self.obs_ph: obs,
+                    self.act_ph: actions,
+                    self.adv_ph: advs,
+                    self.ret_ph: rets,
+                    self.logp_old_ph: logprobs,
+                    self.val_ph: values,
+                    self.lr_ph: lr,
                 }
 
                 pi_loss, vf_loss, entropy, kl, _ = self.sess.run(
@@ -207,7 +202,7 @@ class PPOAgent(BaseAgent):
                 kl_buf.append(kl)
 
         return [np.mean(pi_loss_buf), np.mean(vf_loss_buf),
-                np.mean(entropy_buf), np.mean(kl_buf)]
+                np.mean(entropy_buf), np.mean(kl_buf), lr]
 
     def select_action(self, obs, deterministic=False):
         [mu, pi, v, logp_pi] = self.sess.run(

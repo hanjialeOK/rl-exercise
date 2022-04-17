@@ -121,7 +121,7 @@ class CriticMLP(tf.keras.Model):
 
 class TRPOAgent(BaseAgent):
     def __init__(self, sess, obs_dim, act_dim, num_env=1,
-                 max_kl=0.01, vf_lr=1e-3, train_vf_iters=5, ent_coef=0.0,
+                 max_kl=0.01, vf_lr=3e-4, train_vf_iters=10, ent_coef=0.0,
                  cg_damping=0.1, cg_iters=10, horizon=1024, minibatch=64,
                  gamma=0.99, lam=0.98):
         self.sess = sess
@@ -148,27 +148,24 @@ class TRPOAgent(BaseAgent):
         self.critic = CriticMLP(name='vf')
 
     def _build_train_op(self):
-        ob1_ph = tf.compat.v1.placeholder(
+        self.ob1_ph = ob1_ph = tf.compat.v1.placeholder(
             shape=(self.num_env, ) + self.obs_dim, dtype=tf.float32, name="ob1_ph")
-        obs_ph = tf.compat.v1.placeholder(
+        self.obs_ph = obs_ph = tf.compat.v1.placeholder(
             shape=(None, ) + self.obs_dim, dtype=tf.float32, name="obs_ph")
-        act_ph = tf.compat.v1.placeholder(
+        self.act_ph = act_ph = tf.compat.v1.placeholder(
             shape=(None, ) + self.act_dim, dtype=tf.float32, name="act_ph")
-        adv_ph = tf.compat.v1.placeholder(
+        self.adv_ph = adv_ph = tf.compat.v1.placeholder(
             shape=[None, ], dtype=tf.float32, name="adv_ph")
-        ret_ph = tf.compat.v1.placeholder(
+        self.ret_ph = ret_ph = tf.compat.v1.placeholder(
             shape=[None, ], dtype=tf.float32, name="ret_ph")
-        logp_old_ph = tf.compat.v1.placeholder(
+        self.logp_old_ph = logp_old_ph = tf.compat.v1.placeholder(
             shape=[None, ], dtype=tf.float32, name="logp_old_ph")
-        val_ph = tf.compat.v1.placeholder(
+        self.val_ph = val_ph = tf.compat.v1.placeholder(
             shape=[None, ], dtype=tf.float32, name="val_ph")
-        mu_old_ph = tf.compat.v1.placeholder(
+        self.mu_old_ph = mu_old_ph = tf.compat.v1.placeholder(
             shape=(None, ) + self.act_dim, dtype=tf.float32, name='mu_old_ph')
-        logstd_old_ph = tf.compat.v1.placeholder(
+        self.logstd_old_ph = logstd_old_ph = tf.compat.v1.placeholder(
             shape=(1, ) + self.act_dim, dtype=tf.float32, name='logstd_old_ph')
-
-        all_phs = [obs_ph, act_ph, adv_ph, ret_ph, logp_old_ph, val_ph,
-                   mu_old_ph, logstd_old_ph]
 
         # Probability distribution
         logstd = tf.compat.v1.get_variable(
@@ -206,7 +203,7 @@ class TRPOAgent(BaseAgent):
 
         # Value function optimizer
         vf_optimizer = tf.train.AdamOptimizer(
-            learning_rate=self.vf_lr, epsilon=1e-5)
+            learning_rate=self.vf_lr, epsilon=1e-8)
         vf_params = self._get_var_list('vf')
         vf_train_op = vf_optimizer.minimize(vf_loss, var_list=vf_params)
 
@@ -228,8 +225,6 @@ class TRPOAgent(BaseAgent):
             dtype=tf.float32, name="newv_ph")
         set_pi_params = setfromflat(pi_params, newv_ph)
 
-        self.ob1_ph = ob1_ph
-        self.all_phs = all_phs
         self.tangent_ph = tangent_ph
         self.newv_ph = newv_ph
         self.get_action_ops = get_action_ops
@@ -260,18 +255,18 @@ class TRPOAgent(BaseAgent):
         # with open('/data/hanjl/debug_data/params.pkl', 'wb') as f:
         #     pickle.dump(params, f)
         inputs = {
-            self.all_phs[0]: obs,
-            self.all_phs[1]: actions,
-            self.all_phs[2]: advs,
-            self.all_phs[4]: logprobs,
-            self.all_phs[5]: values,
-            self.all_phs[6]: mus,
-            self.all_phs[7]: logstd
+            self.obs_ph: obs,
+            self.act_ph: actions,
+            self.adv_ph: advs,
+            self.logp_old_ph: logprobs,
+            self.val_ph: values,
+            self.mu_old_ph: mus,
+            self.logstd_old_ph: logstd
         }
         fvp_inputs = {
-            self.all_phs[0]: obs[::5],
-            self.all_phs[6]: mus[::5],
-            self.all_phs[7]: logstd
+            self.obs_ph: obs[::5],
+            self.mu_old_ph: mus[::5],
+            self.logstd_old_ph: logstd
         }
 
         surrgain_buf = []
@@ -285,42 +280,44 @@ class TRPOAgent(BaseAgent):
 
         g = self.sess.run(
             self.surr_grads_flatted, feed_dict=inputs)
-
-        # Core calculations for TRPO or NPG
-        stepdir = cg(fisher_vector_product, g, self.cg_iters)
-        assert np.isfinite(stepdir).all()
-        shs = .5 * np.dot(stepdir, fisher_vector_product(stepdir))
-        lm = np.sqrt(shs / self.max_kl)
-        fullstep = stepdir / lm
-        expectedimprove = np.dot(g, fullstep)
-        oldv = self.sess.run(self.pi_params_flatted)
-        surrbefore = self.sess.run(self.optimgain, feed_dict=inputs)
-        stepsize = 1.0
-        for i in range(10):
-            newv = oldv + fullstep * stepsize
-            self.sess.run(self.set_pi_params,
-                          feed_dict={self.newv_ph: newv})
-            surr, kl, entropy = self.sess.run(
-                [self.optimgain, self.kl, self.entropy], feed_dict=inputs)
-            surrgain_buf.append(surr)
-            kl_buf.append(kl)
-            entropy_buf.append(entropy)
-            improve = surr - surrbefore
-            print("Expected: %.3f Actual: %.3f" % (expectedimprove, improve))
-            if not np.isfinite([surr, kl]).all():
-                print("Got non-finite value of losses -- bad!")
-            elif kl > self.max_kl * 1.5:
-                print("violated KL constraint. shrinking step.")
-            elif improve < 0:
-                print("surrogate didn't improve. shrinking step.")
-            else:
-                print("Stepsize OK!")
-                break
-            stepsize *= 0.5
+        if np.allclose(g, 0):
+            print("Got zero gradient. not updating")
         else:
-            print("couldn't compute a good step")
-            self.sess.run(self.set_pi_params,
-                          feed_dict={self.newv_ph: oldv})
+            stepdir = cg(fisher_vector_product, g, self.cg_iters)
+            assert np.isfinite(stepdir).all()
+            shs = .5 * np.dot(stepdir, fisher_vector_product(stepdir))
+            lm = np.sqrt(shs / self.max_kl)
+            fullstep = stepdir / lm
+            expectedimprove = np.dot(g, fullstep)
+            oldv = self.sess.run(self.pi_params_flatted)
+            surrbefore = self.sess.run(self.optimgain, feed_dict=inputs)
+            stepsize = 1.0
+            for i in range(10):
+                newv = oldv + fullstep * stepsize
+                self.sess.run(self.set_pi_params,
+                              feed_dict={self.newv_ph: newv})
+                surr, kl, entropy = self.sess.run(
+                    [self.optimgain, self.kl, self.entropy], feed_dict=inputs)
+                surrgain_buf.append(surr)
+                kl_buf.append(kl)
+                entropy_buf.append(entropy)
+                improve = surr - surrbefore
+                print("Expected: %.3f Actual: %.3f" %
+                      (expectedimprove, improve))
+                if not np.isfinite([surr, kl]).all():
+                    print("Got non-finite value of losses -- bad!")
+                elif kl > self.max_kl * 1.5:
+                    print("violated KL constraint. shrinking step.")
+                elif improve < 0:
+                    print("surrogate didn't improve. shrinking step.")
+                else:
+                    print("Stepsize OK!")
+                    break
+                stepsize *= 0.5
+            else:
+                print("couldn't compute a good step")
+                self.sess.run(self.set_pi_params,
+                              feed_dict={self.newv_ph: oldv})
 
         indices = np.arange(self.horizon * self.num_env)
         for _ in range(self.train_vf_iters):
@@ -331,8 +328,8 @@ class TRPOAgent(BaseAgent):
                 end = start + self.minibatch
                 mbinds = indices[start:end]
                 batch_inputs = {
-                    self.all_phs[0]: obs[mbinds],
-                    self.all_phs[3]: rets[mbinds]
+                    self.obs_ph: obs[mbinds],
+                    self.ret_ph: rets[mbinds]
                 }
                 vf_loss, _ = self.sess.run(
                     [self.vf_loss, self.vf_train_op],
