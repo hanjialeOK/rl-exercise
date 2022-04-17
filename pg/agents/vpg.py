@@ -67,8 +67,7 @@ class VPGAgent(BaseAgent):
     def __init__(self, sess, obs_dim, act_dim, num_env=1,
                  pi_lr=1e-3, vf_lr=1e-3, target_kl=0.01, train_iters=5,
                  ent_coef=0.0, vf_coef=0.5, max_grad_norm=0.5, horizon=2048,
-                 minibatch=64, gamma=0.99, lam=0.95,
-                 fixed_lr=True):
+                 minibatch=64, gamma=0.99, lam=0.95):
         self.sess = sess
         self.obs_dim = obs_dim
         self.act_dim = act_dim
@@ -82,7 +81,6 @@ class VPGAgent(BaseAgent):
         self.ent_coef = ent_coef
         self.vf_coef = vf_coef
         self.max_grad_norm = max_grad_norm
-        self.fixed_lr = fixed_lr
 
         self.buffer = Buffer.GAEBuffer(
             obs_dim, act_dim, size=horizon, num_env=num_env, gamma=gamma, lam=lam)
