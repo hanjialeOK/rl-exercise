@@ -204,7 +204,7 @@ class TRPOAgent(BaseAgent):
         optimgain = surrgain + self.ent_coef * meanent
 
         # Value function optimizer
-        vf_optimizer = tf.train.AdamOptimizer(
+        vf_optimizer = tf.compat.v1.train.AdamOptimizer(
             learning_rate=self.vf_lr, epsilon=1e-8)
         vf_params = self._get_var_list('vf')
         vf_train_op = vf_optimizer.minimize(vf_loss, var_list=vf_params)

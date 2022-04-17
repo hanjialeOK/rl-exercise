@@ -140,7 +140,8 @@ class PPOAgent(BaseAgent):
         loss = pi_loss - meanent * self.ent_coef + vf_loss * self.vf_coef
 
         # Optimizers
-        optimizer = tf.train.AdamOptimizer(learning_rate=lr_ph, epsilon=1e-5)
+        optimizer = tf.compat.v1.train.AdamOptimizer(
+            learning_rate=lr_ph, epsilon=1e-5)
         params = self._get_var_list('pi') + self._get_var_list('vf')
         grads_and_vars = optimizer.compute_gradients(loss, var_list=params)
         grads, vars = zip(*grads_and_vars)

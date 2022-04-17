@@ -143,9 +143,9 @@ class VPGAgent(BaseAgent):
         approx_kl = 0.5 * tf.reduce_mean(tf.square(logp_old_ph - logp_a))
 
         # Optimizers
-        pi_optimizer = tf.train.AdamOptimizer(
+        pi_optimizer = tf.compat.v1.train.AdamOptimizer(
             learning_rate=pi_lr_ph, epsilon=1e-8)
-        vf_optimizer = tf.train.AdamOptimizer(
+        vf_optimizer = tf.compat.v1.train.AdamOptimizer(
             learning_rate=self.vf_lr, epsilon=1e-8)
         pi_params = self._get_var_list('pi')
         vf_params = self._get_var_list('vf')
