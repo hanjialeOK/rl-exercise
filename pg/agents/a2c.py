@@ -178,7 +178,6 @@ class A2CAgent(BaseAgent):
             self.adv_ph: advs,
             self.ret_ph: rets,
             self.logp_old_ph: logprobs,
-            self.val_ph: values,
             self.lr_ph: lr,
         }
 

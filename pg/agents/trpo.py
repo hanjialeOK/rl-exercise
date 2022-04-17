@@ -259,7 +259,6 @@ class TRPOAgent(BaseAgent):
             self.act_ph: actions,
             self.adv_ph: advs,
             self.logp_old_ph: logprobs,
-            self.val_ph: values,
             self.mu_old_ph: mus,
             self.logstd_old_ph: logstd
         }

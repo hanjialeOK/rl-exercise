@@ -264,8 +264,7 @@ class TRPOAgent(BaseAgent):
             self.obs_ph: obs[indices],
             self.act_ph: actions[indices],
             self.adv_ph: advs[indices],
-            self.logp_old_ph: logprobs[indices],
-            self.val_ph: values[indices]
+            self.logp_old_ph: logprobs[indices]
         }
         fvp_inputs = {
             self.obs_ph: obs[indices][::5]
