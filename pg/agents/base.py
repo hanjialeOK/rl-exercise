@@ -10,7 +10,7 @@ class BaseAgent():
         scope = tf.compat.v1.get_default_graph().get_name_scope()
         vars = tf.compat.v1.get_collection(
             tf.compat.v1.GraphKeys.TRAINABLE_VARIABLES,
-            scope=os.path.join(scope, name))
+            scope=os.path.join(scope, name)+'/')
         return vars
 
     def _build_saver(self):
