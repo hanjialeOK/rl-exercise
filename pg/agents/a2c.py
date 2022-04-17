@@ -165,12 +165,9 @@ class A2CAgent(BaseAgent):
     def update(self, frac):
         buf_data = self.buffer.get()
         assert buf_data[0].shape[0] == self.minibatch
-
-        indices = np.arange(self.minibatch)
-        np.random.shuffle(indices)
-        slices = [arr[indices] for arr in buf_data]
-        [obs, actions, advs, rets, logprobs, values] = slices
+        [obs, actions, advs, rets, logprobs, values] = buf_data
         advs = (advs - np.mean(advs)) / (np.std(advs) + 1e-8)
+
         lr = self.lr if self.fixed_lr else self.lr * frac
         inputs = {
             self.obs_ph: obs,

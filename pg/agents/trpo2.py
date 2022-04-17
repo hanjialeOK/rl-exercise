@@ -79,10 +79,10 @@ class ActorMLP(tf.keras.Model):
         activation_fn = tf.keras.activations.tanh
         kernel_initializer = None
         self.dense1 = tf.keras.layers.Dense(
-            32, activation=activation_fn,
+            64, activation=activation_fn,
             kernel_initializer=tf_ortho_init(np.sqrt(2)), name='fc1')
         self.dense2 = tf.keras.layers.Dense(
-            32, activation=activation_fn,
+            64, activation=activation_fn,
             kernel_initializer=tf_ortho_init(np.sqrt(2)), name='fc2')
         self.dense3 = tf.keras.layers.Dense(
             ac_dim[0], activation=None,
@@ -102,10 +102,10 @@ class CriticMLP(tf.keras.Model):
         activation_fn = tf.keras.activations.tanh
         kernel_initializer = None
         self.dense1 = tf.keras.layers.Dense(
-            32, activation=activation_fn,
+            64, activation=activation_fn,
             kernel_initializer=tf_ortho_init(np.sqrt(2)), name='fc1')
         self.dense2 = tf.keras.layers.Dense(
-            32, activation=activation_fn,
+            64, activation=activation_fn,
             kernel_initializer=tf_ortho_init(np.sqrt(2)), name='fc2')
         self.dense3 = tf.keras.layers.Dense(
             1, activation=None,
@@ -257,23 +257,20 @@ class TRPOAgent(BaseAgent):
         [obs, actions, advs, rets, logprobs, values] = buf_data
         advs = (advs - np.mean(advs)) / (np.std(advs) + 1e-8)
 
-        indices = np.arange(self.horizon * self.num_env)
-        np.random.shuffle(indices)
-
-        inputs = {
-            self.obs_ph: obs[indices],
-            self.act_ph: actions[indices],
-            self.adv_ph: advs[indices],
-            self.logp_old_ph: logprobs[indices]
-        }
-        fvp_inputs = {
-            self.obs_ph: obs[indices][::5]
-        }
-
         surrgain_buf = []
         vf_loss_buf = []
         entropy_buf = []
         kl_buf = []
+
+        inputs = {
+            self.obs_ph: obs,
+            self.act_ph: actions,
+            self.adv_ph: advs,
+            self.logp_old_ph: logprobs
+        }
+        fvp_inputs = {
+            self.obs_ph: obs[::5]
+        }
 
         def fisher_vector_product(x):
             return self.sess.run(
@@ -307,17 +304,21 @@ class TRPOAgent(BaseAgent):
                 print("Expected: %.3f Actual: %.3f" %
                       (expectedimprove, improve))
                 if not np.isfinite([surr, kl]).all():
-                    print("Got non-finite value of losses -- bad!")
+                    cprint("Got non-finite value of losses -- bad!",
+                           color='red')
                 elif kl > self.max_kl * 1.5:
-                    print("violated KL constraint. shrinking step.")
+                    cprint("violated KL constraint. shrinking step.",
+                           color='yellow')
                 elif improve < 0:
-                    print("surrogate didn't improve. shrinking step.")
+                    cprint("surrogate didn't improve. shrinking step.",
+                           color='yellow')
                 else:
-                    print("Stepsize OK!")
+                    cprint("Stepsize OK!", color='green')
                     break
                 stepsize *= 0.5
             else:
-                print("couldn't compute a good step")
+                cprint("couldn't compute a good step",
+                       color='red', attrs=['bold'])
                 self.sess.run(self.set_pi_params,
                               feed_dict={self.newv_ph: oldv})
 

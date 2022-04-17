@@ -167,22 +167,19 @@ class VPGAgent(BaseAgent):
         [obs, actions, advs, rets, logprobs, values] = buf_data
         advs = (advs - np.mean(advs)) / (np.std(advs) + 1e-8)
 
-        indices = np.arange(self.horizon * self.num_env)
-        np.random.shuffle(indices)
-
-        pi_inputs = {
-            self.obs_ph: obs[indices],
-            self.act_ph: actions[indices],
-            self.adv_ph: advs[indices],
-            self.logp_old_ph: logprobs[indices],
-            self.pi_lr_ph: self.pi_lr,
-        }
-
         pi_loss_buf = []
         vf_loss_buf = []
         entropy_buf = []
         kl_buf = []
         lr_buf = []
+
+        pi_inputs = {
+            self.obs_ph: obs,
+            self.act_ph: actions,
+            self.adv_ph: advs,
+            self.logp_old_ph: logprobs,
+            self.pi_lr_ph: self.pi_lr,
+        }
 
         pi_loss, entropy, klold, _ = self.sess.run(
             [self.pi_loss, self.entropy,
@@ -201,6 +198,7 @@ class VPGAgent(BaseAgent):
             self.pi_lr *= 1.5
         # self.pi_lr = np.clip(self.pi_lr, 0, 1e-3)
 
+        indices = np.arange(self.horizon * self.num_env)
         for i in range(self.train_iters):
             # Randomize the indexes
             np.random.shuffle(indices)
