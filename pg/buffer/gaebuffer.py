@@ -203,7 +203,7 @@ class PPOTD0Buffer:
 class TRPOBuffer(GAEBuffer):
     def __init__(self, obs_dim, act_dim, size, num_env=1, gamma=0.99, lam=0.95):
         self.mu_buf = np.zeros((size, num_env) + act_dim, dtype=np.float32)
-        self.logstd_buf = np.zeros((size, 1) + act_dim, dtype=np.float32)
+        self.logstd_buf = np.zeros((1,) + act_dim, dtype=np.float32)
         super().__init__(obs_dim=obs_dim, act_dim=act_dim, size=size,
                          num_env=num_env, gamma=gamma, lam=lam)
 
@@ -211,7 +211,7 @@ class TRPOBuffer(GAEBuffer):
         assert mu.shape == (self.num_env,) + self.act_dim
         assert logstd.shape == (1,) + self.act_dim
         self.mu_buf[self.ptr] = mu
-        self.logstd_buf[self.ptr] = logstd
+        self.logstd_buf = logstd
         super().store(obs, act, rew, done, val, logp)
 
     def finish_path(self, last_val=None):
@@ -227,4 +227,4 @@ class TRPOBuffer(GAEBuffer):
                 self.logp_buf.reshape(-1),
                 self.val_buf.reshape(-1),
                 self.mu_buf.reshape(self.max_size * self.num_env, -1),
-                self.logstd_buf.reshape(self.max_size * self.num_env, -1)]
+                self.logstd_buf]
