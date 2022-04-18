@@ -260,15 +260,26 @@ def main():
                     tag="loss/lr", simple_value=lr)
             ])
             summary_writer.add_summary(train_summary, step)
+
+            log_infos = []
+            log_infos.append(f'@Env: {args.env}, @Alg: {args.alg}')
+            log_infos.append(f'Epoch: {epoch}/{epochs}: {epoch/epochs:.1%}, '
+                             f'AvgLen: {avg_ep_len:.1f}, '
+                             f'AvgRet: {avg_ep_ret:.1f}')
+            log_infos.append(f'pi_loss: {pi_loss:.4f}, '
+                             f'v_loss: {v_loss:.4f}, '
+                             f'entropy: {entropy:.4f}, '
+                             f'kl: {kl:.4f}')
+            info_lens = [len(log_info) for log_info in log_infos]
+            max_info_len = max(info_lens)
+            n_slashes = max_info_len + 2
+            print("+" + "-"*n_slashes + "+")
+            for log_info in log_infos:
+                print(f"| {log_info:{max_info_len}s} |")
+            print("+" + "-"*n_slashes + "+")
+
             with open(progress_txt, 'a') as f:
                 f.write(f"{step}\t{avg_ep_len}\t{avg_ep_ret}\n")
-            ep_ret_text = colored(f'{avg_ep_ret:.1f}',
-                                  color='green', attrs=['bold'])
-            print(f'@Env: {args.env}: @Alg: {args.alg}\n'
-                  f'Epoch: {epoch}/{epochs}: {epoch/epochs:.1%}, '
-                  f'AvgLen: {avg_ep_len:.1f}, AvgRet: {ep_ret_text}\n'
-                  f'pi_loss: {pi_loss:.4f}, v_loss: {v_loss:.4f}, '
-                  f'entropy: {entropy:.4f}, kl: {kl:.4f}')
 
         # Evaluate
         if epoch % 100 == 0 and args.allow_eval:
