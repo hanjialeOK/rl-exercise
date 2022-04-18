@@ -53,8 +53,13 @@ def flat(var_list):
     return tf.concat([tf.reshape(v, (-1,)) for v in var_list], axis=0)
 
 
-def flatgrad(loss, var_list):
-    return flat(tf.compat.v1.gradients(ys=loss, xs=var_list))
+def flatgrad(loss, var_list, clip_norm=None):
+    grads = tf.compat.v1.gradients(ys=loss, xs=var_list)
+    is_gradclipped = False
+    if clip_norm is not None:
+        grads, _grad_norm = tf.clip_by_global_norm(grads, clip_norm)
+        is_gradclipped = _grad_norm > clip_norm
+    return flat(grads), is_gradclipped
 
 
 def setfromflat(var_list, theta):
@@ -211,12 +216,13 @@ class TRPOAgent(BaseAgent):
 
         # Symbols needed for CG solver
         pi_params = self._get_var_list('pi')
-        surr_grads_flatted = flatgrad(optimgain, pi_params)
-        kl_grads_flatted = flatgrad(meankl, pi_params)
+        surr_grads_flatted, is_gradclipped = flatgrad(
+            optimgain, pi_params, clip_norm=0.5)
+        kl_grads_flatted, _ = flatgrad(meankl, pi_params)
         tangent_ph = tf.compat.v1.placeholder(
             shape=kl_grads_flatted.shape,
             dtype=tf.float32, name='tangent_ph')
-        fvpbase = flatgrad(tf.reduce_sum(
+        fvpbase, _ = flatgrad(tf.reduce_sum(
             kl_grads_flatted * tangent_ph), pi_params)
         fvp = fvpbase + self.cg_damping * tangent_ph
 
@@ -238,6 +244,7 @@ class TRPOAgent(BaseAgent):
         self.entropy = meanent
         self.vf_train_op = vf_train_op
         self.surr_grads_flatted = surr_grads_flatted
+        self.is_gradclipped = is_gradclipped
         self.pi_params_flatted = pi_params_flatted
         self.fvp = fvp
         self.set_pi_params = set_pi_params
@@ -277,8 +284,8 @@ class TRPOAgent(BaseAgent):
                 self.fvp, feed_dict={**fvp_inputs, self.tangent_ph: x})
 
         self.sess.run(self.sync_ops)
-        g = self.sess.run(
-            self.surr_grads_flatted, feed_dict=inputs)
+        g, is_gradclipped = self.sess.run(
+            [self.surr_grads_flatted, self.is_gradclipped], feed_dict=inputs)
         if np.allclose(g, 0):
             print("Got zero gradient. not updating")
         else:
@@ -340,7 +347,8 @@ class TRPOAgent(BaseAgent):
                 vf_loss_buf.append(vf_loss)
 
         return [np.mean(surrgain_buf), np.mean(vf_loss_buf),
-                np.mean(entropy_buf), np.mean(kl_buf), self.vf_lr]
+                np.mean(entropy_buf), np.mean(kl_buf),
+                is_gradclipped, self.vf_lr]
 
     def select_action(self, obs, deterministic=False):
         [mu, pi, v, logp_pi] = self.sess.run(

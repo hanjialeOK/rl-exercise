@@ -67,7 +67,7 @@ class VPGAgent(BaseAgent):
     def __init__(self, sess, obs_dim, act_dim, num_env=1,
                  pi_lr=1e-3, vf_lr=1e-3, target_kl=0.01, train_iters=5,
                  ent_coef=0.0, vf_coef=0.5, max_grad_norm=0.5, horizon=2048,
-                 minibatch=64, gamma=0.99, lam=0.95):
+                 minibatch=64, gamma=0.99, lam=0.95, grad_clip=True):
         self.sess = sess
         self.obs_dim = obs_dim
         self.act_dim = act_dim
@@ -81,6 +81,7 @@ class VPGAgent(BaseAgent):
         self.ent_coef = ent_coef
         self.vf_coef = vf_coef
         self.max_grad_norm = max_grad_norm
+        self.grad_clip = grad_clip
 
         self.buffer = Buffer.GAEBuffer(
             obs_dim, act_dim, size=horizon, num_env=num_env, gamma=gamma, lam=lam)
@@ -147,8 +148,18 @@ class VPGAgent(BaseAgent):
             learning_rate=self.vf_lr, epsilon=1e-8)
         pi_params = self._get_var_list('pi')
         vf_params = self._get_var_list('vf')
-        pi_train_op = pi_optimizer.minimize(pi_loss, var_list=pi_params)
+        # pi_train_op = pi_optimizer.minimize(pi_loss, var_list=pi_params)
         vf_train_op = vf_optimizer.minimize(vf_loss, var_list=vf_params)
+
+        grads_and_vars = pi_optimizer.compute_gradients(
+            pi_loss, var_list=pi_params)
+        grads, vars = zip(*grads_and_vars)
+        if self.grad_clip:
+            grads, _grad_norm = tf.clip_by_global_norm(
+                grads, self.max_grad_norm)
+            is_gradclipped = _grad_norm > self.max_grad_norm
+        grads_and_vars = list(zip(grads, vars))
+        pi_train_op = pi_optimizer.apply_gradients(grads_and_vars)
 
         self.get_action_ops = get_action_ops
         self.v1 = v1
@@ -156,6 +167,7 @@ class VPGAgent(BaseAgent):
         self.vf_loss = vf_loss
         self.entropy = meanent
         self.approx_kl = approx_kl
+        self.is_gradclipped = is_gradclipped
         self.pi_train_op = pi_train_op
         self.vf_train_op = vf_train_op
 
@@ -179,9 +191,9 @@ class VPGAgent(BaseAgent):
             self.pi_lr_ph: self.pi_lr,
         }
 
-        pi_loss, entropy, klold, _ = self.sess.run(
-            [self.pi_loss, self.entropy,
-             self.approx_kl, self.pi_train_op],
+        pi_loss, entropy, klold, is_gradclipped, _ = self.sess.run(
+            [self.pi_loss, self.entropy, self.approx_kl,
+             self.is_gradclipped, self.pi_train_op],
             feed_dict=pi_inputs)
         klnew = self.sess.run(
             self.approx_kl, feed_dict=pi_inputs)
@@ -216,7 +228,7 @@ class VPGAgent(BaseAgent):
 
         return [np.mean(pi_loss_buf), np.mean(vf_loss_buf),
                 np.mean(entropy_buf), np.mean(kl_buf),
-                np.mean(lr_buf)]
+                is_gradclipped, np.mean(lr_buf)]
 
     def select_action(self, obs, deterministic=False):
         [mu, pi, v, logp_pi] = self.sess.run(

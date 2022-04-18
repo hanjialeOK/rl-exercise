@@ -148,6 +148,7 @@ class PPOAgent(BaseAgent):
         if self.grad_clip:
             grads, _grad_norm = tf.clip_by_global_norm(
                 grads, self.max_grad_norm)
+            is_gradclipped = _grad_norm > self.max_grad_norm
         grads_and_vars = list(zip(grads, vars))
 
         train_op = optimizer.apply_gradients(grads_and_vars)
@@ -159,16 +160,20 @@ class PPOAgent(BaseAgent):
         self.approx_kl = approx_kl
         self.entropy = meanent
         self.clipfrac = clipfrac
+        self.is_gradclipped = is_gradclipped
         self.train_op = train_op
 
     def update(self, frac):
         buf_data = self.buffer.get()
         assert buf_data[0].shape[0] == self.horizon * self.num_env
 
+        lr = self.lr if self.fixed_lr else self.lr * frac
+
         pi_loss_buf = []
         vf_loss_buf = []
         entropy_buf = []
         kl_buf = []
+        is_gradclipped_buf = []
 
         indices = np.arange(self.horizon * self.num_env)
         for _ in range(self.train_iters):
@@ -181,7 +186,6 @@ class PPOAgent(BaseAgent):
                 slices = [arr[mbinds] for arr in buf_data]
                 [obs, actions, advs, rets, logprobs, values] = slices
                 advs = (advs - np.mean(advs)) / (np.std(advs) + 1e-8)
-                lr = self.lr if self.fixed_lr else self.lr * frac
                 inputs = {
                     self.obs_ph: obs,
                     self.act_ph: actions,
@@ -192,18 +196,19 @@ class PPOAgent(BaseAgent):
                     self.lr_ph: lr,
                 }
 
-                pi_loss, vf_loss, entropy, kl, _ = self.sess.run(
-                    [self.pi_loss, self.vf_loss,
-                     self.entropy, self.approx_kl,
-                     self.train_op],
+                pi_loss, vf_loss, entropy, kl, is_gradclipped, _ = self.sess.run(
+                    [self.pi_loss, self.vf_loss, self.entropy, self.approx_kl,
+                     self.is_gradclipped, self.train_op],
                     feed_dict=inputs)
                 pi_loss_buf.append(pi_loss)
                 vf_loss_buf.append(vf_loss)
                 entropy_buf.append(entropy)
                 kl_buf.append(kl)
+                is_gradclipped_buf.append(is_gradclipped)
 
         return [np.mean(pi_loss_buf), np.mean(vf_loss_buf),
-                np.mean(entropy_buf), np.mean(kl_buf), lr]
+                np.mean(entropy_buf), np.mean(kl_buf),
+                np.mean(is_gradclipped_buf), lr]
 
     def select_action(self, obs, deterministic=False):
         [mu, pi, v, logp_pi] = self.sess.run(

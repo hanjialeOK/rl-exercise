@@ -151,6 +151,7 @@ class A2CAgent(BaseAgent):
         if self.grad_clip:
             grads, _grad_norm = tf.clip_by_global_norm(
                 grads, self.max_grad_norm)
+            is_gradclipped = _grad_norm > self.max_grad_norm
         grads_and_vars = list(zip(grads, vars))
 
         train_op = optimizer.apply_gradients(grads_and_vars)
@@ -161,6 +162,7 @@ class A2CAgent(BaseAgent):
         self.vf_loss = vf_loss
         self.entropy = meanent
         self.approx_kl = approx_kl
+        self.is_gradclipped = is_gradclipped
         self.train_op = train_op
 
     def update(self, frac):
@@ -179,13 +181,12 @@ class A2CAgent(BaseAgent):
             self.lr_ph: lr,
         }
 
-        pi_loss, vf_loss, entropy, kl, _ = self.sess.run(
-            [self.pi_loss, self.vf_loss,
-             self.entropy, self.approx_kl,
-             self.train_op],
+        pi_loss, vf_loss, entropy, kl, is_gradclipped, _ = self.sess.run(
+            [self.pi_loss, self.vf_loss, self.entropy, self.approx_kl,
+             self.is_gradclipped, self.train_op],
             feed_dict=inputs)
 
-        return [pi_loss, vf_loss, entropy, kl, lr]
+        return [pi_loss, vf_loss, entropy, kl, is_gradclipped, lr]
 
     def select_action(self, obs, deterministic=False):
         [mu, pi, v, logp_pi] = self.sess.run(
