@@ -57,7 +57,8 @@ def main():
     parser.add_argument('--env', type=str,
                         default='Walker2d-v2')
     parser.add_argument('--alg', type=str, default='PPO',
-                        choices=['VPG', 'TRPO', 'PPO', 'PPO2', 'PPOV', 'A2C'],
+                        choices=['VPG', 'VPG_UN', 'TRPO', 'TRPO2',
+                                 'PPO', 'PPO2', 'PPOV', 'A2C'],
                         help='Experiment name')
     parser.add_argument('--allow_eval', action='store_true',
                         help='Whether to eval agent')
@@ -150,13 +151,27 @@ def main():
     elif args.alg == 'VPG':
         import pg.agents.vpg as VPG
         agent = VPG.VPGAgent(sess, obs_dim, act_dim,
-                             num_env=args.num_env, horizon=2048)
+                             num_env=args.num_env, horizon=1024)
         # 1M // 2048 / 488 = 1
-        log_interval = 1
+        log_interval = 2
+    elif args.alg == 'VPG_UN':
+        import pg.agents.vpg_united as VPG_UN
+        agent = VPG_UN.VPGAgent(sess, obs_dim, act_dim,
+                                num_env=args.num_env, horizon=1024)
+        # 1M // 2048 / 488 = 1
+        log_interval = 2
     elif args.alg == 'TRPO':
-        raise NotImplementedError
         import pg.agents.trpo as TRPO
-        agent = TRPO.TRPOAgent(sess, obs_dim, act_dim, horizon=1000)
+        agent = TRPO.TRPOAgent(sess, obs_dim, act_dim,
+                               num_env=args.num_env, horizon=1024)
+        # 1M // 1024 / 488 = 1
+        log_interval = 2
+    elif args.alg == 'TRPO2':
+        import pg.agents.trpo2 as TRPO2
+        agent = TRPO2.TRPOAgent(sess, obs_dim, act_dim,
+                                num_env=args.num_env, horizon=1024)
+        # 1M // 1024 / 488 = 1
+        log_interval = 2
     elif args.alg == 'PPO':
         import pg.agents.ppo as PPO
         agent = PPO.PPOAgent(sess, obs_dim, act_dim,
@@ -164,6 +179,7 @@ def main():
         # 1M // 2048 / 488 = 1
         log_interval = 1
     elif args.alg == 'PPOV':
+        raise NotImplementedError
         import pg.agents.ppo2_distv as PPOV
         agent = PPOV.PPOAgent(sess, obs_dim, act_dim,
                               num_env=args.num_env, horizon=2048)
@@ -215,7 +231,7 @@ def main():
 
         frac = 1.0 - (epoch - 1.0) / epochs
 
-        pi_loss, v_loss, entropy, kl = agent.update(frac)
+        [pi_loss, v_loss, entropy, kl, gradclipfrac, lr] = agent.update(frac)
 
         # Steps we have trained.
         step = epoch * horizon
@@ -237,16 +253,20 @@ def main():
                 tf.compat.v1.Summary.Value(
                     tag="loss/avgvloss", simple_value=v_loss),
                 tf.compat.v1.Summary.Value(
-                    tag="loss/avgentropy", simple_value=entropy)
+                    tag="loss/avgentropy", simple_value=entropy),
+                tf.compat.v1.Summary.Value(
+                    tag="loss/gradclipfrac", simple_value=gradclipfrac),
+                tf.compat.v1.Summary.Value(
+                    tag="loss/lr", simple_value=lr)
             ])
             summary_writer.add_summary(train_summary, step)
             with open(progress_txt, 'a') as f:
                 f.write(f"{step}\t{avg_ep_len}\t{avg_ep_ret}\n")
             ep_ret_text = colored(f'{avg_ep_ret:.1f}',
                                   color='green', attrs=['bold'])
-            print(f'@Epoch: {epoch}/{epochs}, '
-                  f'AvgLen: {avg_ep_len:.1f}, AvgRet: {ep_ret_text}, '
-                  f'Algo {args.alg}: {epoch/epochs:.1%}\n'
+            print(f'@Env: {args.env}: @Alg: {args.alg}\n'
+                  f'Epoch: {epoch}/{epochs}: {epoch/epochs:.1%}, '
+                  f'AvgLen: {avg_ep_len:.1f}, AvgRet: {ep_ret_text}\n'
                   f'pi_loss: {pi_loss:.4f}, v_loss: {v_loss:.4f}, '
                   f'entropy: {entropy:.4f}, kl: {kl:.4f}')
 
