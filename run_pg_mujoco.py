@@ -270,12 +270,12 @@ def main():
                              f'v_loss: {v_loss:.4f}, '
                              f'entropy: {entropy:.4f}, '
                              f'kl: {kl:.4f}')
-            info_lens = [len(log_info) for log_info in log_infos]
+            info_lens = [len(info) for info in log_infos]
             max_info_len = max(info_lens)
             n_slashes = max_info_len + 2
             print("+" + "-"*n_slashes + "+")
-            for log_info in log_infos:
-                print(f"| {log_info:{max_info_len}s} |")
+            for info in log_infos:
+                print(f"| {info:{max_info_len}s} |")
             print("+" + "-"*n_slashes + "+")
 
             with open(progress_txt, 'a') as f:
