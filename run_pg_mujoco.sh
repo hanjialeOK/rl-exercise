@@ -1,10 +1,23 @@
 #!/bin/zsh
+
+# color
+RED=$(tput setaf 1)
+GREEN=$(tput setaf 2)
+YELLOW=$(tput setaf 3)
+BLUE=$(tput setaf 4)
+MAGENTA=$(tput setaf 5)
+CYAN=$(tput setaf 6)
+WHIHE=$(tput setaf 7)
+# mode
+BOLD=$(tput bold)
+RESET=$(tput sgr0)
+
 ALGO=$1
 ENV=$2
 DIR_NAME=$3
 NUM_ENV=$4
 
-echo "Running ${ALGO} of rl-exercise in ${ENV} for six experiments..."
+echo "Running ${BOLD}${ALGO}${RESET} of rl-exercise in ${BOLD}${ENV}${RESET} for six experiments..."
 CUDA_VISIBLE_DEVICES=0 PYTHONWARNINGS=ignore python run_pg_mujoco.py \
     --alg ${ALGO} --env ${ENV} --dir_name ${DIR_NAME} --num_env ${NUM_ENV} > /dev/null &
 sleep 5
