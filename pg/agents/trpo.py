@@ -126,7 +126,7 @@ class CriticMLP(tf.keras.Model):
 
 class TRPOAgent(BaseAgent):
     def __init__(self, sess, obs_dim, act_dim, num_env=1,
-                 max_kl=0.01, vf_lr=3e-4, train_vf_iters=10, ent_coef=0.0,
+                 max_kl=0.01, vf_lr=1e-3, train_vf_iters=5, ent_coef=0.0,
                  cg_damping=0.1, cg_iters=10, horizon=1024, minibatch=64,
                  gamma=0.99, lam=0.98):
         self.sess = sess
