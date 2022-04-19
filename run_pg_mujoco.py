@@ -75,19 +75,16 @@ def main():
 
     timestamp = time.strftime("%Y-%m-%d-%H_%M_%S", time.localtime(time.time()))
     base_name = args.alg + '-' + timestamp
-    dir_name = args.dir_name
-    exp_name = args.alg
-    env_name = args.env
     base_dir = os.path.join(
-        args.data_dir, f"my_results/{env_name}/{dir_name}/{base_name}")
+        args.data_dir, f"my_results/{args.env}/{args.dir_name}/{base_name}")
     if not os.path.exists(base_dir):
         os.makedirs(base_dir)
     total_steps = int(args.total_steps)
 
     # Dump config.
     # locals() can only be put at main(), instead of __main__.
-    config = convert_json(locals())
-    save_json(config, base_dir)
+    # config = convert_json(locals())
+    # save_json(config, base_dir)
 
     # Create dir
     summary_dir = os.path.join(base_dir, "tf1_summary")
@@ -99,7 +96,7 @@ def main():
     progress_txt = os.path.join(base_dir, 'progress.txt')
     eval_txt = os.path.join(base_dir, 'eval.txt')
     with open(progress_txt, 'w') as f1, open(eval_txt, 'w') as f2:
-        f1.write('Step\tAvgLength\tAvgEpRet\n')
+        f1.write('Step\tAvgEpRet\n')
         f2.write('Step\tAvgEpRet\n')
 
     # Random seed
@@ -108,18 +105,18 @@ def main():
     np.random.seed(seed)
 
     # Environment
-    env = gym.make(env_name)
+    env = gym.make(args.env)
     env.seed(seed)
-    env_eval = gym.make(env_name)
+    env_eval = gym.make(args.env)
     env_eval.seed(seed)
     obs_dim = env.observation_space.shape
     act_dim = env.action_space.shape
 
     # Normalized rew and obs
-    # env = make_vec_env(env_name, env_type='mujoco',
+    # env = make_vec_env(args.env, env_type='mujoco',
     #                    num_env=args.num_env, seed=seed)
     # env = VecNormalize(env, use_tf=False)
-    env = make_vec_env(env_name, num_env=args.num_env, seed=seed)
+    env = make_vec_env(args.env, num_env=args.num_env, seed=seed)
     env = VecNormalize(env)
 
     # Tensorboard
@@ -199,7 +196,10 @@ def main():
     # Params
     horizon = agent.horizon
 
-    cprint(f'Running experiment: {args.alg}\n', color='cyan', attrs=['bold'])
+    cprint(f'Running experiment: {args.alg}\n'
+           f'Env: {args.env}, Num_env: {args.num_env}\n'
+           f'Logging dir: {base_dir}\n',
+           color='cyan', attrs=['bold'])
 
     # Start
     start_time = time.time()
@@ -262,13 +262,15 @@ def main():
             summary_writer.add_summary(train_summary, step)
 
             log_infos = []
-            log_infos.append(f'@Env: {args.env}, @Alg: {args.alg}')
-            log_infos.append(f'Epoch: {epoch}/{epochs}: {epoch/epochs:.1%}, '
-                             f'AvgLen: {avg_ep_len:.1f}, '
+            log_infos.append(f'Env: {args.env} | Alg: {args.alg} | '
+                             f'TotalSteps: {total_steps:.1e} | '
+                             f'Horizon: {horizon}')
+            log_infos.append(f'Epoch: {epoch}/{epochs}: {epoch/epochs:.1%} | '
+                             f'AvgLen: {avg_ep_len:.1f} | '
                              f'AvgRet: {avg_ep_ret:.1f}')
-            log_infos.append(f'pi_loss: {pi_loss:.4f}, '
-                             f'v_loss: {v_loss:.4f}, '
-                             f'entropy: {entropy:.4f}, '
+            log_infos.append(f'pi_loss: {pi_loss:.4f} | '
+                             f'v_loss: {v_loss:.4f} | '
+                             f'entropy: {entropy:.4f} | '
                              f'kl: {kl:.4f}')
             info_lens = [len(info) for info in log_infos]
             max_info_len = max(info_lens)
@@ -279,7 +281,7 @@ def main():
             print("+" + "-"*n_slashes + "+")
 
             with open(progress_txt, 'a') as f:
-                f.write(f"{step}\t{avg_ep_len}\t{avg_ep_ret}\n")
+                f.write(f"{step}\t{avg_ep_ret}\n")
 
         # Evaluate
         if epoch % 100 == 0 and args.allow_eval:
