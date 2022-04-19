@@ -84,10 +84,10 @@ class ActorMLP(tf.keras.Model):
         activation_fn = tf.keras.activations.tanh
         kernel_initializer = None
         self.dense1 = tf.keras.layers.Dense(
-            32, activation=activation_fn,
+            64, activation=activation_fn,
             kernel_initializer=tf_ortho_init(np.sqrt(2)), name='fc1')
         self.dense2 = tf.keras.layers.Dense(
-            32, activation=activation_fn,
+            64, activation=activation_fn,
             kernel_initializer=tf_ortho_init(np.sqrt(2)), name='fc2')
         self.dense3 = tf.keras.layers.Dense(
             ac_dim[0], activation=None,
