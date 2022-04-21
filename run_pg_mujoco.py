@@ -139,6 +139,7 @@ def main():
            f'{gpu_list}\n',
            color='cyan', attrs=['bold'])
 
+    # Hyperparameters in http://arxiv.org/abs/1709.06560
     if args.alg == 'A2C':
         import pg.agents.a2c as A2C
         agent = A2C.A2CAgent(sess, obs_dim, act_dim,
@@ -160,19 +161,22 @@ def main():
     elif args.alg == 'TRPO':
         import pg.agents.trpo as TRPO
         agent = TRPO.TRPOAgent(sess, obs_dim, act_dim,
-                               num_env=args.num_env, horizon=1024)
+                               num_env=args.num_env, horizon=5000,
+                               gamma=0.995, lam=0.97, cg_iters=20)
         # 1M // 1024 / 488 = 1
-        log_interval = 2
+        log_interval = 1
     elif args.alg == 'TRPO2':
         import pg.agents.trpo2 as TRPO2
         agent = TRPO2.TRPOAgent(sess, obs_dim, act_dim,
-                                num_env=args.num_env, horizon=1024)
+                                num_env=args.num_env, horizon=5000,
+                                gamma=0.995, lam=0.97, cg_iters=20)
         # 1M // 1024 / 488 = 1
-        log_interval = 2
+        log_interval = 1
     elif args.alg == 'PPO':
         import pg.agents.ppo as PPO
         agent = PPO.PPOAgent(sess, obs_dim, act_dim,
-                             num_env=args.num_env, horizon=2048)
+                             num_env=args.num_env, horizon=2048,
+                             gamma=0.995, lam=0.97, fixed_lr=True)
         # 1M // 2048 / 488 = 1
         log_interval = 1
     elif args.alg == 'PPOV':
@@ -185,7 +189,8 @@ def main():
     elif args.alg == 'PPO2':
         import pg.agents.ppo2 as PPO2
         agent = PPO2.PPOAgent(sess, obs_dim, act_dim,
-                              num_env=args.num_env, horizon=2048)
+                              num_env=args.num_env, horizon=2048,
+                              gamma=0.995, lam=0.97, fixed_lr=True)
         # 1M // 2048 / 488 = 1
         log_interval = 1
     else:
