@@ -56,13 +56,20 @@ class GAEBuffer:
 
     def get(self):
         assert self.ptr == self.max_size
-        self.ptr = 0
         return [self.obs_buf.reshape(self.max_size * self.num_env, -1),
                 self.act_buf.reshape(self.max_size * self.num_env, -1),
                 self.adv_buf.reshape(-1),
                 self.ret_buf.reshape(-1),
                 self.logp_buf.reshape(-1),
                 self.val_buf.reshape(-1)]
+
+    def get_rms_data(self):
+        assert self.ptr == self.max_size
+        return [self.obs_buf.reshape(self.max_size * self.num_env, -1),
+                self.ret_buf.reshape(-1)]
+
+    def reset(self):
+        self.ptr = 0
 
 
 class PPODistVBuffer:

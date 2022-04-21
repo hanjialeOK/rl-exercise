@@ -17,24 +17,24 @@ class VecNormalize(VecEnvWrapper):
         self.ret_rms = RunningMeanStd(shape=()) if ret else None
         self.clipob = clipob
         self.cliprew = cliprew
-        self.ret = np.zeros(self.num_envs)
+        # self.ret = np.zeros(self.num_envs)
         self.gamma = gamma
         self.epsilon = epsilon
 
     def step_wait(self):
         obs, rews, news, infos = self.venv.step_wait()
-        self.ret = self.ret * self.gamma + rews
+        # self.ret = self.ret * self.gamma + rews
         obs = self._obfilt(obs)
         if self.ret_rms:
-            self.ret_rms.update(self.ret)
+            # self.ret_rms.update(self.ret)
             rews = np.clip(rews / np.sqrt(self.ret_rms.var +
                            self.epsilon), -self.cliprew, self.cliprew)
-        self.ret[news] = 0.
+        # self.ret[news] = 0.
         return obs, rews, news, infos
 
     def _obfilt(self, obs):
         if self.ob_rms:
-            self.ob_rms.update(obs)
+            # self.ob_rms.update(obs)
             obs = np.clip((obs - self.ob_rms.mean) / np.sqrt(self.ob_rms.var +
                           self.epsilon), -self.clipob, self.clipob)
             return obs
@@ -42,6 +42,24 @@ class VecNormalize(VecEnvWrapper):
             return obs
 
     def reset(self):
-        self.ret = np.zeros(self.num_envs)
+        # self.ret = np.zeros(self.num_envs)
         obs = self.venv.reset()
         return self._obfilt(obs)
+
+    def update_rms(self, obs, ret):
+        if self.ob_rms:
+            obs_raw = self._unnormalize_obs(obs)
+            self.ob_rms.update(obs_raw)
+        if self.ret_rms:
+            ret_raw = self._unnormalize_ret(ret)
+            self.ret_rms.update(ret_raw)
+
+    def _unnormalize_obs(self, obs):
+        if self.ob_rms:
+            return (obs * np.sqrt(self.ob_rms.var + self.epsilon)) + self.ob_rms.mean
+        return obs
+
+    def _unnormalize_ret(self, ret):
+        if self.ret_rms:
+            return ret * np.sqrt(self.ret_rms.var + self.epsilon)
+        return ret

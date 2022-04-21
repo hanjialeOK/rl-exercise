@@ -176,7 +176,7 @@ def main():
         import pg.agents.ppo as PPO
         agent = PPO.PPOAgent(sess, obs_dim, act_dim,
                              num_env=args.num_env, horizon=2048,
-                             gamma=0.995, lam=0.97, fixed_lr=True)
+                             gamma=0.995, lam=0.97, fixed_lr=False)
         # 1M // 2048 / 488 = 1
         log_interval = 1
     elif args.alg == 'PPOV':
@@ -190,7 +190,7 @@ def main():
         import pg.agents.ppo2 as PPO2
         agent = PPO2.PPOAgent(sess, obs_dim, act_dim,
                               num_env=args.num_env, horizon=2048,
-                              gamma=0.995, lam=0.97, fixed_lr=True)
+                              gamma=0.99, lam=0.95, fixed_lr=False)
         # 1M // 2048 / 488 = 1
         log_interval = 1
     else:
@@ -237,6 +237,10 @@ def main():
         frac = 1.0 - (epoch - 1.0) / epochs
 
         [pi_loss, v_loss, entropy, kl, gradclipfrac, lr] = agent.update(frac)
+
+        [rms_obs, rms_ret] = agent.buffer.get_rms_data()
+        env.update_rms(obs=rms_obs, ret=rms_ret)
+        agent.buffer.reset()
 
         # Steps we have trained.
         step = epoch * horizon
