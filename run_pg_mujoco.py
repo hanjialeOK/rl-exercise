@@ -176,7 +176,7 @@ def main():
         import pg.agents.ppo as PPO
         agent = PPO.PPOAgent(sess, obs_dim, act_dim,
                              num_env=args.num_env, horizon=2048,
-                             gamma=0.995, lam=0.97, fixed_lr=False)
+                             gamma=0.995, lam=0.97, fixed_lr=True)
         # 1M // 2048 / 488 = 1
         log_interval = 1
     elif args.alg == 'PPOV':
@@ -190,7 +190,7 @@ def main():
         import pg.agents.ppo2 as PPO2
         agent = PPO2.PPOAgent(sess, obs_dim, act_dim,
                               num_env=args.num_env, horizon=2048,
-                              gamma=0.99, lam=0.95, fixed_lr=False)
+                              gamma=0.995, lam=0.97, fixed_lr=True)
         # 1M // 2048 / 488 = 1
         log_interval = 1
     else:
