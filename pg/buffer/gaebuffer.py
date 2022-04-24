@@ -11,15 +11,17 @@ class GAEBuffer:
         self.adv_buf = np.zeros((size, ), dtype=np.float32)
         self.rew_buf = np.zeros((size, ), dtype=np.float32)
         self.done_buf = np.zeros((size, ), dtype=np.float32)
+        self.terminal_buf = np.zeros((size, ), dtype=np.float32)
         self.ret_buf = np.zeros((size, ), dtype=np.float32)
         self.val_buf = np.zeros((size, ), dtype=np.float32)
+        self.next_val_buf = np.zeros((size, ), dtype=np.float32)
         self.logp_buf = np.zeros((size, ), dtype=np.float32)
         self.gamma, self.lam = gamma, lam
         self.ptr, self.max_size = 0, size
         self.obs_dim = obs_dim
         self.act_dim = act_dim
 
-    def store(self, obs, act, rew, done, val, logp):
+    def store(self, obs, act, rew, done, terminal, val, next_val, logp):
         assert self.ptr < self.max_size
         assert obs.shape == self.obs_dim
         assert act.shape == self.act_dim
@@ -31,7 +33,9 @@ class GAEBuffer:
         self.act_buf[self.ptr] = act
         self.rew_buf[self.ptr] = rew
         self.done_buf[self.ptr] = done
+        self.terminal_buf[self.ptr] = terminal
         self.val_buf[self.ptr] = val
+        self.next_val_buf[self.ptr] = next_val
         self.logp_buf[self.ptr] = logp
         self.ptr += 1
 
@@ -39,15 +43,16 @@ class GAEBuffer:
         assert self.ptr == self.max_size
         # assert last_val.shape == (self.num_env,)
         # path_slice = slice(self.path_start_idx, self.ptr)
-        vals = np.append(self.val_buf, last_val)
+        # vals = np.append(self.val_buf, last_val)
         # self.val_buf[self.ptr] = last_val
 
         # GAE-Lambda advantage calculation
         lastgaelam = 0.0
         for t in reversed(range(self.ptr)):
             nondone = 1.0 - self.done_buf[t]
+            nonterminal = 1.0 - self.terminal_buf[t]
             delta = self.rew_buf[t] + self.gamma * \
-                nondone * vals[t + 1] - vals[t]
+                nonterminal * self.next_val_buf[t] - self.val_buf[t]
             self.adv_buf[t] = lastgaelam = delta + \
                 self.gamma * self.lam * nondone * lastgaelam
         self.ret_buf = self.adv_buf + self.val_buf

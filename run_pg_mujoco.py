@@ -228,8 +228,8 @@ def main():
             ep_len += 1
             ep_ret += env._unnormalize_ret(reward)
 
-            # done = done if ep_len < max_ep_len else False
-            agent.store_transition(obs, ac, reward, done)
+            mask = done if ep_len < max_ep_len else False
+            agent.store_transition(obs, ac, reward, done, mask, next_obs)
 
             obs = next_obs
 
