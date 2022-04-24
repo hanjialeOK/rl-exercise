@@ -6,8 +6,8 @@ import os
 import argparse
 import collections
 
-from common.cmd_util import make_vec_env
-from common.vec_env.vec_normalize import VecNormalize
+# from common.cmd_util import make_vec_env
+from common.vec_normalize import VecNormalize
 # from baselines.common.cmd_util import make_vec_env
 # from baselines.common.vec_env.vec_normalize import VecNormalize
 
@@ -116,7 +116,7 @@ def main():
     # env = make_vec_env(args.env, env_type='mujoco',
     #                    num_env=args.num_env, seed=seed)
     # env = VecNormalize(env, use_tf=False)
-    env = make_vec_env(args.env, num_env=args.num_env, seed=seed)
+    # env = make_vec_env(args.env, num_env=args.num_env, seed=seed)
     env = VecNormalize(env)
 
     # Tensorboard
@@ -209,30 +209,37 @@ def main():
     # Start
     start_time = time.time()
     obs = env.reset()
-    max_ep_ret = 0
+    # max_ep_ret = 0
+    max_ep_len = env.spec.max_episode_steps
     ep_ret_buf = collections.deque(maxlen=100)
     ep_len_buf = collections.deque(maxlen=100)
+    ep_len = 0
+    ep_ret = 0.
 
     epochs = total_steps // horizon
     for epoch in range(1, epochs + 1):
         for t in range(1, horizon + 1):
             ac = agent.select_action(obs)
 
-            next_obs, rewards, dones, infos = env.step(ac)
+            next_obs, reward, done, info = env.step(ac)
+            ep_len += 1
+            ep_ret += env._unnormalize_ret(reward)
 
-            agent.store_transition(obs, ac, rewards, dones)
+            # done = done if ep_len < max_ep_len else False
+            agent.store_transition(obs, ac, reward, done)
 
             obs = next_obs
 
-            for info in infos:
-                ep_info = info.get('episode')
-                if ep_info:
-                    ep_ret_buf.append(ep_info['r'])
-                    ep_len_buf.append(ep_info['l'])
-
-        # If trajectory didn't reach terminal state, bootstrap value target
-        last_val = agent.compute_v(obs)
-        agent.buffer.finish_path(last_val)
+            terminal = done or ep_len == max_ep_len
+            if terminal or t == horizon:
+                last_val = agent.compute_v(obs)
+                agent.buffer.finish_path(last_val)
+                if terminal:
+                    ep_ret_buf.append(ep_ret)
+                    ep_len_buf.append(ep_len)
+                    obs = env.reset()
+                    ep_len = 0
+                    ep_ret = 0.
 
         frac = 1.0 - (epoch - 1.0) / epochs
 

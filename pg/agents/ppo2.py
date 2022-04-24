@@ -81,7 +81,7 @@ class PPOAgent(BaseAgent):
         self.fixed_lr = fixed_lr
 
         self.buffer = Buffer.GAEBuffer(
-            obs_dim, act_dim, size=horizon, num_env=num_env, gamma=gamma, lam=lam)
+            obs_dim, act_dim, size=horizon, gamma=gamma, lam=lam)
         self._build_network()
         self._build_train_op()
         self.saver = self._build_saver()
@@ -236,13 +236,14 @@ class PPOAgent(BaseAgent):
             self.get_action_ops, feed_dict={self.ob1_ph: obs.reshape(self.num_env, -1)})
         self.extra_info = [v, logp_pi]
         ac = mu if deterministic else pi
-        return pi
+        return pi[0]
 
     def compute_v(self, obs):
-        return self.sess.run(
+        v = self.sess.run(
             self.v1, feed_dict={self.ob1_ph: obs.reshape(self.num_env, -1)})
+        return v[0]
 
     def store_transition(self, obs, action, reward, done):
         [v, logp_pi] = self.extra_info
         self.buffer.store(obs, action, reward, done,
-                          v, logp_pi)
+                          v[0], logp_pi[0])
