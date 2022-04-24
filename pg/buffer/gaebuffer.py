@@ -12,13 +12,12 @@ class GAEBuffer:
         self.rew_buf = np.zeros((size, ), dtype=np.float32)
         self.done_buf = np.zeros((size, ), dtype=np.float32)
         self.ret_buf = np.zeros((size, ), dtype=np.float32)
-        self.val_buf = np.zeros((size+1, ), dtype=np.float32)
+        self.val_buf = np.zeros((size, ), dtype=np.float32)
         self.logp_buf = np.zeros((size, ), dtype=np.float32)
         self.gamma, self.lam = gamma, lam
         self.ptr, self.max_size = 0, size
         self.obs_dim = obs_dim
         self.act_dim = act_dim
-        self.path_start_idx = 0
 
     def store(self, obs, act, rew, done, val, logp):
         assert self.ptr < self.max_size
@@ -37,24 +36,21 @@ class GAEBuffer:
         self.ptr += 1
 
     def finish_path(self, last_val=None):
-        # assert self.ptr == self.max_size
+        assert self.ptr == self.max_size
         # assert last_val.shape == (self.num_env,)
-        path_slice = slice(self.path_start_idx, self.ptr)
-        # vals = np.append(self.val_buf[path_slice], last_val)
-        self.val_buf[self.ptr] = last_val
+        # path_slice = slice(self.path_start_idx, self.ptr)
+        vals = np.append(self.val_buf, last_val)
+        # self.val_buf[self.ptr] = last_val
 
         # GAE-Lambda advantage calculation
         lastgaelam = 0.0
-        for t in reversed(range(self.path_start_idx, self.ptr)):
+        for t in reversed(range(self.ptr)):
             nondone = 1.0 - self.done_buf[t]
             delta = self.rew_buf[t] + self.gamma * \
-                nondone * self.val_buf[t + 1] - self.val_buf[t]
+                nondone * vals[t + 1] - vals[t]
             self.adv_buf[t] = lastgaelam = delta + \
                 self.gamma * self.lam * nondone * lastgaelam
-        self.ret_buf[path_slice] = self.adv_buf[path_slice] + \
-            self.val_buf[path_slice]
-
-        self.path_start_idx = self.ptr
+        self.ret_buf = self.adv_buf + self.val_buf
         pass
 
     def get(self):
@@ -64,7 +60,7 @@ class GAEBuffer:
                 self.adv_buf.reshape(-1),
                 self.ret_buf.reshape(-1),
                 self.logp_buf.reshape(-1),
-                self.val_buf.reshape(-1)[:-1]]
+                self.val_buf.reshape(-1)]
 
     def get_rms_data(self):
         assert self.ptr == self.max_size
@@ -73,7 +69,6 @@ class GAEBuffer:
 
     def reset(self):
         self.ptr = 0
-        self.path_start_idx = 0
 
 
 class PPODistVBuffer:

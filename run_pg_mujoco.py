@@ -208,7 +208,7 @@ def main():
 
     # Start
     start_time = time.time()
-    obs = env.reset()
+    # obs = env.reset()
     # max_ep_ret = 0
     max_ep_len = env.spec.max_episode_steps
     ep_ret_buf = collections.deque(maxlen=100)
@@ -218,6 +218,9 @@ def main():
 
     epochs = total_steps // horizon
     for epoch in range(1, epochs + 1):
+        obs = env.reset()
+        ep_len = 0
+        ep_ret = 0.
         for t in range(1, horizon + 1):
             ac = agent.select_action(obs)
 
@@ -231,15 +234,15 @@ def main():
             obs = next_obs
 
             terminal = done or ep_len == max_ep_len
-            if terminal or t == horizon:
-                last_val = agent.compute_v(obs)
-                agent.buffer.finish_path(last_val)
-                if terminal:
-                    ep_ret_buf.append(ep_ret)
-                    ep_len_buf.append(ep_len)
-                    obs = env.reset()
-                    ep_len = 0
-                    ep_ret = 0.
+            if terminal:
+                ep_ret_buf.append(ep_ret)
+                ep_len_buf.append(ep_len)
+                obs = env.reset()
+                ep_len = 0
+                ep_ret = 0.
+
+        last_val = agent.compute_v(obs)
+        agent.buffer.finish_path(last_val)
 
         frac = 1.0 - (epoch - 1.0) / epochs
 
