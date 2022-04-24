@@ -249,8 +249,7 @@ class PPOAgent(BaseAgent):
             self.v1, feed_dict={self.ob1_ph: obs.reshape(self.num_env, -1)})
         return v[0]
 
-    def store_transition(self, obs, action, reward, done, mask, next_obs):
+    def store_transition(self, obs, action, reward, done):
         [v, logp_pi] = self.extra_info
-        next_v = self.compute_v(next_obs)
-        self.buffer.store(obs, action, reward, done, mask,
-                          v[0], next_v, logp_pi[0])
+        self.buffer.store(obs, action, reward, done,
+                          v[0], logp_pi[0])
