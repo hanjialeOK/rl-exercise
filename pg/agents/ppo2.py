@@ -161,10 +161,14 @@ class PPOAgent(BaseAgent):
         loss = pi_loss - meanent * self.ent_coef + vf_loss * self.vf_coef
 
         # Optimizers
-        optimizer = tf.compat.v1.train.AdamOptimizer(
+        pi_optimizer = tf.compat.v1.train.AdamOptimizer(
             learning_rate=lr_ph, epsilon=1e-5)
-        params = self._get_var_list('pi') + self._get_var_list('vf')
-        grads_and_vars = optimizer.compute_gradients(loss, var_list=params)
+        vf_optimizer = tf.compat.v1.train.AdamOptimizer(
+            learning_rate=lr_ph, epsilon=1e-5)
+        pi_params = self._get_var_list('pi')
+        vf_params = self._get_var_list('vf')
+        grads_and_vars = pi_optimizer.compute_gradients(
+            pi_loss, var_list=pi_params)
         grads, vars = zip(*grads_and_vars)
         if self.grad_clip:
             grads, _grad_norm = tf.clip_by_global_norm(
@@ -172,7 +176,8 @@ class PPOAgent(BaseAgent):
             is_gradclipped = _grad_norm > self.max_grad_norm
         grads_and_vars = list(zip(grads, vars))
 
-        train_op = optimizer.apply_gradients(grads_and_vars)
+        pi_train_op = pi_optimizer.apply_gradients(grads_and_vars)
+        vf_train_op = vf_optimizer.minimize(vf_loss, var_list=vf_params)
 
         self.get_action_ops = get_action_ops
         self.v1 = v1
@@ -182,7 +187,8 @@ class PPOAgent(BaseAgent):
         self.entropy = meanent
         self.clipfrac = clipfrac
         self.is_gradclipped = is_gradclipped
-        self.train_op = train_op
+        self.pi_train_op = pi_train_op
+        self.vf_train_op = vf_train_op
 
     def update(self, frac):
         buf_data = self.buffer.get()
@@ -217,9 +223,9 @@ class PPOAgent(BaseAgent):
                     self.lr_ph: lr,
                 }
 
-                pi_loss, vf_loss, entropy, kl, is_gradclipped, _ = self.sess.run(
+                pi_loss, vf_loss, entropy, kl, is_gradclipped, _, _ = self.sess.run(
                     [self.pi_loss, self.vf_loss, self.entropy, self.approx_kl,
-                     self.is_gradclipped, self.train_op],
+                     self.is_gradclipped, self.pi_train_op, self.vf_train_op],
                     feed_dict=inputs)
                 pi_loss_buf.append(pi_loss)
                 vf_loss_buf.append(vf_loss)
