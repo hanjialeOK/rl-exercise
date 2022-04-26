@@ -13,7 +13,7 @@ DIV_LINE_WIDTH = 50
 units = dict()
 
 
-def plot_data(data, xaxis='Epoch', value="AverageEpRet", condition="Condition", smooth=1, **kwargs):
+def plot_data(data, xaxis='Step', value="AvgEpRet", condition="Condition", smooth=1, **kwargs):
     if smooth > 1:
         """
         smooth data with moving window average.
@@ -31,16 +31,17 @@ def plot_data(data, xaxis='Epoch', value="AverageEpRet", condition="Condition", 
 
     if isinstance(data, list):
         data = pd.concat(data, ignore_index=True)
-    sns.set(style="darkgrid", font_scale=1.5)
-    sns.lineplot(data=data, x=xaxis, y=value,
-                 hue=condition, ci=68, **kwargs)
+    sns.set(style="darkgrid", font_scale=1.8)
+    sns.tsplot(data=data, time=xaxis, value=value, unit="Unit", legend=True,
+               condition=condition, ci=50, linewidth=2.5, **kwargs)
     """
     If you upgrade to any version of Seaborn greater than 0.8.1, switch from
     tsplot to lineplot replacing L29 with:
         sns.lineplot(data=data, x=xaxis, y=value, hue=condition, ci='sd', **kwargs)
     Changes the colorscheme and the default legend style, though.
     """
-    plt.legend(loc='best').set_draggable(True)
+    legend = plt.legend(loc='lower right', frameon=True, fancybox=True)
+    # legend.get_frame().set_facecolor('C0')
     # plt.legend(loc='upper center', ncol=3, handlelength=1,
     #           borderaxespad=0., prop={'size': 13})
 
@@ -151,13 +152,12 @@ def main(args):
     print('\n' + '='*DIV_LINE_WIDTH)
     print('Plotting...')
 
-    # choose what to show on main curve: mean? max? min?
-    estimator = getattr(np, 'mean')
     plt.figure()
     plot_data(data, xaxis=args.xaxis, value=args.value, condition='Condition',
-              smooth=args.smooth, estimator=estimator)
+              smooth=args.smooth)
     plt.xlabel('')
     plt.ylabel('')
+    plt.autoscale()
     plt.show()
     plt.savefig(f'{args.name}.pdf')
     print(f"Saved into {os.path.abspath(f'{args.name}.pdf')}")
