@@ -6,7 +6,7 @@ import os
 import numpy as np
 import argparse
 import matplotlib.patches as mpatches
-from matplotlib.ticker import EngFormatter
+import matplotlib.ticker as ticker
 
 DIV_LINE_WIDTH = 50
 
@@ -14,7 +14,7 @@ DIV_LINE_WIDTH = 50
 units = dict()
 
 
-def plot_data(data, xaxis='Epoch', value="AverageEpRet", condition="Condition", smooth=1, ax=None, **kwargs):
+def plot_data(data, xaxis='Step', value="AvgEpRet", condition="Condition", smooth=1, ax=None, **kwargs):
     if smooth > 1:
         """
         smooth data with moving window average.
@@ -118,9 +118,8 @@ def get_datasets(logdir, legend=None, tag=None, data_file='progress.txt'):
 def main(args):
     envs = ['Ant', 'HalfCheetah', 'Hopper', 'Humanoid', 'HumanoidStandup',
             'InvertedDoublePendulum', 'InvertedPendulum', 'Reacher', 'Swimmer', 'Walker2d']
-    algs = ['PPO-master-joschu', 'PPO-master-lrdecay', 'PPO-jqueeney-spinnup']
-    legends = ['PPO-master-joschu',
-               'PPO-master-lrdecay', 'PPO-jqueeney-spinnup']
+    algs = ['PPO-master-lrdecay', 'PPO-master-lrdecay2']
+    legends = ['PPO-master-lrdecay', 'PPO-master-lrdecay2']
     version = 'v2'
 
     nsize = (2, 5)
@@ -183,7 +182,10 @@ def main(args):
         # else:
         #     ax.set_ylabel('')
 
-        ax.xaxis.set_major_formatter(EngFormatter())
+        def mappingx(x, pos): return (x / 1e6)
+
+        # ax.xaxis.set_major_formatter(ticker.EngFormatter())
+        ax.xaxis.set_major_formatter(ticker.FuncFormatter(mappingx))
 
         # margin = 1e6 * 0.05
         # ax.set_xlim(0, 1e6)
