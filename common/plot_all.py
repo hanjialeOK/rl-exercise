@@ -171,17 +171,6 @@ def main(args):
         ax.set_xlabel('')
         ax.set_ylabel('')
 
-        # if i // nsize[1] == 1:
-        #     ax.set_xlabel('Steps(M)', labelpad=10)
-        # else:
-        #     ax.set_xlabel('')
-
-        # if i % nsize[1] == 0:
-        #     ax.set_ylabel('Average Episode Reward')
-        #     ax.set_ylabel('')
-        # else:
-        #     ax.set_ylabel('')
-
         def mappingx(x, pos): return (x / 1e6)
 
         # ax.xaxis.set_major_formatter(ticker.EngFormatter())
@@ -193,6 +182,12 @@ def main(args):
         # ax.margins(0.05)
         ax.autoscale()
         ax.set_box_aspect(4.8/6.4)
+
+    # set labels
+    for ax in axis[-1, :]:
+        ax.set_xlabel('Steps(M)', labelpad=10)
+    for ax in axis[:, 0]:
+        ax.set_ylabel('Average Performance', labelpad=10)
 
     plt.tight_layout(pad=0.5)
     lines = fig.axes[-1].get_lines()
