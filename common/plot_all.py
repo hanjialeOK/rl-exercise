@@ -5,7 +5,8 @@ import json
 import os
 import numpy as np
 import argparse
-from matplotlib.ticker import EngFormatter
+import matplotlib.patches as mpatches
+import matplotlib.ticker as ticker
 
 DIV_LINE_WIDTH = 50
 
@@ -13,7 +14,7 @@ DIV_LINE_WIDTH = 50
 units = dict()
 
 
-def plot_data(data, xaxis='Epoch', value="AverageEpRet", condition="Condition", smooth=1, ax=None, **kwargs):
+def plot_data(data, xaxis='Step', value="AvgEpRet", condition="Condition", smooth=1, ax=None, **kwargs):
     if smooth > 1:
         """
         smooth data with moving window average.
@@ -32,24 +33,14 @@ def plot_data(data, xaxis='Epoch', value="AverageEpRet", condition="Condition", 
     if isinstance(data, list):
         data = pd.concat(data, ignore_index=True)
     # sns.set(style="darkgrid", palette="deep", font_scale=1.5)
-    sns.lineplot(data=data, x=xaxis, y=value, estimator='mean',
-                 hue=condition, ci=68, ax=ax, **kwargs)
+    # ax.margins(0.05)
+    sns.tsplot(data=data, time=xaxis, value=value, unit="Unit", legend=False,
+               condition=condition, ci=50, ax=ax, linewidth=2.5, **kwargs)
     """
     If you upgrade to any version of Seaborn greater than 0.8.1, switch from
     tsplot to lineplot replacing L29 with:
         sns.lineplot(data=data, x=xaxis, y=value, hue=condition, ci='sd', **kwargs)
     Changes the colorscheme and the default legend style, though.
-    """
-    # ax.legend(loc='best').set_draggable(True)
-    ax.legend(loc='lower right').set_draggable(True)
-    # plt.legend(loc='upper center', ncol=3, handlelength=1,
-    #           borderaxespad=0., prop={'size': 13})
-
-    """
-    For the version of the legend used in the Spinning Up benchmarking page,
-    swap L38 with:
-    plt.legend(loc='upper center', ncol=6, handlelength=1,
-               mode="expand", borderaxespad=0., prop={'size': 13})
     """
 
     xscale = np.max(np.asarray(data[xaxis])) > 5e3
@@ -57,6 +48,10 @@ def plot_data(data, xaxis='Epoch', value="AverageEpRet", condition="Condition", 
         # Just some formatting niceness: x-axis scale in scientific notation if max x is large
         ax.ticklabel_format(style='sci', axis='x', scilimits=(0, 0))
 
+    yscale = np.max(np.asarray(data[value])) > 5e4
+    if yscale:
+        # Just some formatting niceness: x-axis scale in scientific notation if max x is large
+        ax.ticklabel_format(style='sci', axis='y', scilimits=(0, 0))
     # ax.tight_layout(pad=0.5)
 
 
@@ -123,15 +118,15 @@ def get_datasets(logdir, legend=None, tag=None, data_file='progress.txt'):
 def main(args):
     envs = ['Ant', 'HalfCheetah', 'Hopper', 'Humanoid', 'HumanoidStandup',
             'InvertedDoublePendulum', 'InvertedPendulum', 'Reacher', 'Swimmer', 'Walker2d']
-    algs = ['PPO-vec_env', 'baselines-PPO']
-    legends = ['PPO-ours', 'baselines-PPO']
+    algs = ['PPO-master-lrdecay', 'PPO-master-lrdecay2']
+    legends = ['PPO-master-lrdecay', 'PPO-master-lrdecay2']
     version = 'v2'
 
     nsize = (2, 5)
 
-    sns.set(style="darkgrid", palette="deep", font_scale=1.5)
+    sns.set(style="darkgrid", palette="deep", font_scale=1.8)
     fig, axis = plt.subplots(nrows=nsize[0], ncols=nsize[1],
-                             figsize=(6.4*nsize[1], 4.8*nsize[0]))
+                             figsize=(6.4*nsize[1], 4.8*nsize[0]*1.2))
 
     for i in range(len(envs)):
         env_name = envs[i] + '-' + version
@@ -175,11 +170,36 @@ def main(args):
         ax.set_title(env_name)
         ax.set_xlabel('')
         ax.set_ylabel('')
-        ax.xaxis.set_major_formatter(EngFormatter())
 
-    # plt.ticklabel_format(style='sci', axis='x', scilimits=(0, 0))
+        def mappingx(x, pos): return (x / 1e6)
+
+        # ax.xaxis.set_major_formatter(ticker.EngFormatter())
+        ax.xaxis.set_major_formatter(ticker.FuncFormatter(mappingx))
+
+        # margin = 1e6 * 0.05
+        # ax.set_xlim(0, 1e6)
+        # ax.set_xlim(0-margin, 1e6+margin)
+        # ax.margins(0.05)
+        ax.autoscale()
+        ax.set_box_aspect(4.8/6.4)
+
+    # set labels
+    for ax in axis[-1, :]:
+        ax.set_xlabel('Steps(M)', labelpad=10)
+    for ax in axis[:, 0]:
+        ax.set_ylabel('Average Performance', labelpad=10)
+
     plt.tight_layout(pad=0.5)
-
+    lines = fig.axes[-1].get_lines()
+    # for line in lines:
+    #     line.set_linewidth(2.0)
+    handles = [mpatches.Patch(color=line.get_c(), label=legend)
+               for (line, legend) in zip(lines, legends)]
+    fig.legend(handles=handles, loc='lower center', prop={'size': 25},
+               ncol=len(algs), handlelength=1, borderaxespad=0.)
+    # fig.legend(handles=lines, labels=legends, loc='lower center', prop={'size': 20},
+    #            ncol=len(algs), handlelength=2, borderaxespad=0.)
+    plt.subplots_adjust(bottom=0.1)
     plt.show()
     plt.savefig('all.pdf')
     plt.savefig('all.svg')

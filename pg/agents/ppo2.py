@@ -58,7 +58,7 @@ class CriticMLP(tf.keras.Model):
 
 
 class PPOAgent(BaseAgent):
-    def __init__(self, sess, obs_dim, act_dim, num_env=1,
+    def __init__(self, sess, obs_dim, act_dim,
                  clip_ratio=0.2, lr=3e-4, train_iters=10, target_kl=0.01,
                  ent_coef=0.0, vf_coef=0.5, max_grad_norm=0.5,
                  horizon=2048, minibatch=64, gamma=0.99, lam=0.95,
@@ -66,13 +66,12 @@ class PPOAgent(BaseAgent):
         self.sess = sess
         self.obs_dim = obs_dim
         self.act_dim = act_dim
-        self.num_env = num_env
         self.clip_ratio = clip_ratio
         self.lr = lr
         self.train_iters = train_iters
         self.target_kl = target_kl
         self.horizon = horizon
-        self.minibatch = minibatch * num_env
+        self.minibatch = minibatch
         self.ent_coef = ent_coef
         self.vf_coef = vf_coef
         self.max_grad_norm = max_grad_norm
@@ -92,7 +91,7 @@ class PPOAgent(BaseAgent):
 
     def _build_train_op(self):
         self.ob1_ph = ob1_ph = tf.compat.v1.placeholder(
-            shape=(self.num_env, ) + self.obs_dim, dtype=tf.float32, name="ob1_ph")
+            shape=(1, ) + self.obs_dim, dtype=tf.float32, name="ob1_ph")
         self.obs_ph = obs_ph = tf.compat.v1.placeholder(
             shape=(self.minibatch, ) + self.obs_dim, dtype=tf.float32, name="obs_ph")
         self.act_ph = act_ph = tf.compat.v1.placeholder(
@@ -192,7 +191,7 @@ class PPOAgent(BaseAgent):
 
     def update(self, frac):
         buf_data = self.buffer.get()
-        assert buf_data[0].shape[0] == self.horizon * self.num_env
+        assert buf_data[0].shape[0] == self.horizon
 
         lr = self.lr if self.fixed_lr else self.lr * frac
 
@@ -202,7 +201,7 @@ class PPOAgent(BaseAgent):
         kl_buf = []
         is_gradclipped_buf = []
 
-        indices = np.arange(self.horizon * self.num_env)
+        indices = np.arange(self.horizon)
         for _ in range(self.train_iters):
             # Randomize the indexes
             np.random.shuffle(indices)
@@ -239,14 +238,14 @@ class PPOAgent(BaseAgent):
 
     def select_action(self, obs, deterministic=False):
         [mu, pi, v, logp_pi] = self.sess.run(
-            self.get_action_ops, feed_dict={self.ob1_ph: obs.reshape(self.num_env, -1)})
+            self.get_action_ops, feed_dict={self.ob1_ph: obs.reshape(1, -1)})
         self.extra_info = [v, logp_pi]
         ac = mu if deterministic else pi
         return pi[0]
 
     def compute_v(self, obs):
         v = self.sess.run(
-            self.v1, feed_dict={self.ob1_ph: obs.reshape(self.num_env, -1)})
+            self.v1, feed_dict={self.ob1_ph: obs.reshape(1, -1)})
         return v[0]
 
     def store_transition(self, obs, action, reward, done):

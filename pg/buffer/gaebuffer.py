@@ -211,17 +211,17 @@ class PPOTD0Buffer:
 
 
 class TRPOBuffer(GAEBuffer):
-    def __init__(self, obs_dim, act_dim, size, num_env=1, gamma=0.99, lam=0.95):
-        self.mu_buf = np.zeros((size, num_env) + act_dim, dtype=np.float32)
+    def __init__(self, obs_dim, act_dim, size, gamma=0.99, lam=0.95):
+        self.mu_buf = np.zeros((size,) + act_dim, dtype=np.float32)
         self.logstd_buf = np.zeros((1,) + act_dim, dtype=np.float32)
         super().__init__(obs_dim=obs_dim, act_dim=act_dim, size=size,
-                         num_env=num_env, gamma=gamma, lam=lam)
+                         gamma=gamma, lam=lam)
 
     def store(self, obs, act, rew, done, val, logp, mu, logstd):
-        assert mu.shape == (self.num_env,) + self.act_dim
-        assert logstd.shape == (1,) + self.act_dim
+        assert mu.shape == self.act_dim
+        assert logstd.shape == self.act_dim
         self.mu_buf[self.ptr] = mu
-        self.logstd_buf = logstd
+        self.logstd_buf[0] = logstd
         super().store(obs, act, rew, done, val, logp)
 
     def finish_path(self, last_val=None):
@@ -229,12 +229,11 @@ class TRPOBuffer(GAEBuffer):
 
     def get(self):
         assert self.ptr == self.max_size
-        self.ptr = 0
-        return [self.obs_buf.reshape(self.max_size * self.num_env, -1),
-                self.act_buf.reshape(self.max_size * self.num_env, -1),
-                self.adv_buf.reshape(-1),
-                self.ret_buf.reshape(-1),
-                self.logp_buf.reshape(-1),
-                self.val_buf.reshape(-1),
-                self.mu_buf.reshape(self.max_size * self.num_env, -1),
+        return [self.obs_buf,
+                self.act_buf,
+                self.adv_buf,
+                self.ret_buf,
+                self.logp_buf,
+                self.val_buf[:-1],
+                self.mu_buf,
                 self.logstd_buf]

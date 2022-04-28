@@ -64,17 +64,16 @@ class A2CAgent(BaseAgent):
     between Monte Carlo Control and SARSA.
     """
 
-    def __init__(self, sess, obs_dim, act_dim, num_env=1,
+    def __init__(self, sess, obs_dim, act_dim,
                  lr=3e-4, ent_coef=0.0, vf_coef=0.5,
                  max_grad_norm=0.5, horizon=5, gamma=0.99, lam=0.95,
                  grad_clip=True, fixed_lr=False):
         self.sess = sess
         self.obs_dim = obs_dim
         self.act_dim = act_dim
-        self.num_env = num_env
         self.lr = lr
         self.horizon = horizon
-        self.minibatch = horizon * num_env
+        self.minibatch = horizon
         self.ent_coef = ent_coef
         self.vf_coef = vf_coef
         self.max_grad_norm = max_grad_norm
@@ -82,7 +81,7 @@ class A2CAgent(BaseAgent):
         self.fixed_lr = fixed_lr
 
         self.buffer = Buffer.GAEBuffer(
-            obs_dim, act_dim, size=horizon, num_env=num_env, gamma=gamma, lam=lam)
+            obs_dim, act_dim, size=horizon, gamma=gamma, lam=lam)
         self._build_network()
         self._build_train_op()
         self.saver = self._build_saver()
@@ -93,7 +92,7 @@ class A2CAgent(BaseAgent):
 
     def _build_train_op(self):
         self.ob1_ph = ob1_ph = tf.compat.v1.placeholder(
-            shape=(self.num_env, ) + self.obs_dim, dtype=tf.float32, name="ob1_ph")
+            shape=(1, ) + self.obs_dim, dtype=tf.float32, name="ob1_ph")
         self.obs_ph = obs_ph = tf.compat.v1.placeholder(
             shape=(self.minibatch, ) + self.obs_dim, dtype=tf.float32, name="obs_ph")
         self.act_ph = act_ph = tf.compat.v1.placeholder(
@@ -190,16 +189,17 @@ class A2CAgent(BaseAgent):
 
     def select_action(self, obs, deterministic=False):
         [mu, pi, v, logp_pi] = self.sess.run(
-            self.get_action_ops, feed_dict={self.ob1_ph: obs.reshape(self.num_env, -1)})
+            self.get_action_ops, feed_dict={self.ob1_ph: obs.reshape(1, -1)})
         self.extra_info = [v, logp_pi]
         ac = mu if deterministic else pi
-        return pi
+        return pi[0]
 
     def compute_v(self, obs):
-        return self.sess.run(
-            self.v1, feed_dict={self.ob1_ph: obs.reshape(self.num_env, -1)})
+        v = self.sess.run(
+            self.v1, feed_dict={self.ob1_ph: obs.reshape(1, -1)})
+        return v[0]
 
     def store_transition(self, obs, action, reward, done):
         [v, logp_pi] = self.extra_info
         self.buffer.store(obs, action, reward, done,
-                          v, logp_pi)
+                          v[0], logp_pi[0])
