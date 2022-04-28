@@ -125,14 +125,13 @@ class CriticMLP(tf.keras.Model):
 
 
 class TRPOAgent(BaseAgent):
-    def __init__(self, sess, obs_dim, act_dim, num_env=1,
+    def __init__(self, sess, obs_dim, act_dim,
                  max_kl=0.01, vf_lr=1e-3, train_vf_iters=5, ent_coef=0.0,
                  cg_damping=0.1, cg_iters=10, horizon=1024, minibatch=64,
                  gamma=0.99, lam=0.98):
         self.sess = sess
         self.obs_dim = obs_dim
         self.act_dim = act_dim
-        self.num_env = num_env
         self.max_kl = max_kl
         self.vf_lr = vf_lr
         self.train_vf_iters = train_vf_iters
@@ -140,10 +139,10 @@ class TRPOAgent(BaseAgent):
         self.cg_damping = cg_damping
         self.cg_iters = cg_iters
         self.horizon = horizon
-        self.minibatch = minibatch * num_env
+        self.minibatch = minibatch
 
         self.buffer = Buffer.TRPOBuffer(
-            obs_dim, act_dim, size=horizon, num_env=num_env, gamma=gamma, lam=lam)
+            obs_dim, act_dim, size=horizon, gamma=gamma, lam=lam)
         self._build_network()
         self._build_train_op()
         self.saver = self._build_saver()
@@ -154,7 +153,7 @@ class TRPOAgent(BaseAgent):
 
     def _build_train_op(self):
         self.ob1_ph = ob1_ph = tf.compat.v1.placeholder(
-            shape=(self.num_env, ) + self.obs_dim, dtype=tf.float32, name="ob1_ph")
+            shape=(1, ) + self.obs_dim, dtype=tf.float32, name="ob1_ph")
         self.obs_ph = obs_ph = tf.compat.v1.placeholder(
             shape=(None, ) + self.obs_dim, dtype=tf.float32, name="obs_ph")
         self.act_ph = act_ph = tf.compat.v1.placeholder(
@@ -250,7 +249,7 @@ class TRPOAgent(BaseAgent):
 
     def update(self, frac=None):
         buf_data = self.buffer.get()
-        assert buf_data[0].shape[0] == self.horizon * self.num_env
+        assert buf_data[0].shape[0] == self.horizon
         [obs, actions, advs, rets, logprobs, values, mus, logstd] = buf_data
         advs = (advs - np.mean(advs)) / (np.std(advs) + 1e-8)
 
@@ -322,7 +321,7 @@ class TRPOAgent(BaseAgent):
                 self.sess.run(self.set_pi_params,
                               feed_dict={self.newv_ph: oldv})
 
-        indices = np.arange(self.horizon * self.num_env)
+        indices = np.arange(self.horizon)
         for _ in range(self.train_vf_iters):
             # Randomize the indexes
             np.random.shuffle(indices)
@@ -345,16 +344,17 @@ class TRPOAgent(BaseAgent):
 
     def select_action(self, obs, deterministic=False):
         [mu, pi, v, logp_pi, logstd] = self.sess.run(
-            self.get_action_ops, feed_dict={self.ob1_ph: obs.reshape(self.num_env, -1)})
+            self.get_action_ops, feed_dict={self.ob1_ph: obs.reshape(1, -1)})
         self.extra_info = [v, logp_pi, mu, logstd]
         ac = mu if deterministic else pi
-        return pi
+        return pi[0]
 
     def compute_v(self, obs):
-        return self.sess.run(
-            self.v1, feed_dict={self.ob1_ph: obs.reshape(self.num_env, -1)})
+        v = self.sess.run(
+            self.v1, feed_dict={self.ob1_ph: obs.reshape(1, -1)})
+        return v[0]
 
     def store_transition(self, obs, action, reward, done):
         [v, logp_pi, mu, logstd] = self.extra_info
         self.buffer.store(obs, action, reward, done,
-                          v, logp_pi, mu, logstd)
+                          v[0], logp_pi[0], mu[0], logstd[0])

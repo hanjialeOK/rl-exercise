@@ -66,8 +66,6 @@ def main():
                         help='Whether to save model')
     parser.add_argument('--total_steps', type=int, default=1e6,
                         help='Total steps trained')
-    parser.add_argument('--num_env', type=int, default=1,
-                        help='Number of envs.')
     args = parser.parse_args()
 
     if not os.path.exists(args.data_dir):
@@ -113,10 +111,6 @@ def main():
     act_dim = env.action_space.shape
 
     # Normalized rew and obs
-    # env = make_vec_env(args.env, env_type='mujoco',
-    #                    num_env=args.num_env, seed=seed)
-    # env = VecNormalize(env, use_tf=False)
-    # env = make_vec_env(args.env, num_env=args.num_env, seed=seed)
     env = VecNormalize(env)
 
     # Tensorboard
@@ -142,55 +136,47 @@ def main():
     # Hyperparameters in http://arxiv.org/abs/1709.06560
     if args.alg == 'A2C':
         import pg.agents.a2c as A2C
-        agent = A2C.A2CAgent(sess, obs_dim, act_dim,
-                             num_env=args.num_env, horizon=5)
+        agent = A2C.A2CAgent(sess, obs_dim, act_dim, horizon=5)
         # 1M // 5 // 488 = 409
         log_interval = total_steps // agent.horizon // 488
     elif args.alg == 'VPG':
         import pg.agents.vpg as VPG
-        agent = VPG.VPGAgent(sess, obs_dim, act_dim,
-                             num_env=args.num_env, horizon=1024)
+        agent = VPG.VPGAgent(sess, obs_dim, act_dim, horizon=1024)
         # 1M // 2048 / 488 = 1
         log_interval = 2
     elif args.alg == 'VPG_UN':
         import pg.agents.vpg_united as VPG_UN
-        agent = VPG_UN.VPGAgent(sess, obs_dim, act_dim,
-                                num_env=args.num_env, horizon=1024)
+        agent = VPG_UN.VPGAgent(sess, obs_dim, act_dim, horizon=1024)
         # 1M // 2048 / 488 = 1
         log_interval = 2
     elif args.alg == 'TRPO':
         import pg.agents.trpo as TRPO
-        agent = TRPO.TRPOAgent(sess, obs_dim, act_dim,
-                               num_env=args.num_env, horizon=5000,
-                               gamma=0.995, lam=0.97, cg_iters=20)
+        agent = TRPO.TRPOAgent(sess, obs_dim, act_dim, horizon=1024,
+                               gamma=0.995, lam=0.97, cg_iters=10)
         # 1M // 1024 / 488 = 1
         log_interval = 1
     elif args.alg == 'TRPO2':
         import pg.agents.trpo2 as TRPO2
-        agent = TRPO2.TRPOAgent(sess, obs_dim, act_dim,
-                                num_env=args.num_env, horizon=5000,
-                                gamma=0.995, lam=0.97, cg_iters=20)
+        agent = TRPO2.TRPOAgent(sess, obs_dim, act_dim, horizon=1024,
+                                gamma=0.995, lam=0.97, cg_iters=10)
         # 1M // 1024 / 488 = 1
-        log_interval = 1
+        log_interval = 2
     elif args.alg == 'PPO':
         import pg.agents.ppo as PPO
-        agent = PPO.PPOAgent(sess, obs_dim, act_dim,
-                             num_env=args.num_env, horizon=2048,
+        agent = PPO.PPOAgent(sess, obs_dim, act_dim, horizon=2048,
                              gamma=0.995, lam=0.97, fixed_lr=True)
         # 1M // 2048 / 488 = 1
         log_interval = 1
     elif args.alg == 'PPOV':
         raise NotImplementedError
         import pg.agents.ppo2_distv as PPOV
-        agent = PPOV.PPOAgent(sess, obs_dim, act_dim,
-                              num_env=args.num_env, horizon=2048)
+        agent = PPOV.PPOAgent(sess, obs_dim, act_dim, horizon=2048)
         # 1M // 2048 / 488 = 1
         log_interval = 1
     elif args.alg == 'PPO2':
         import pg.agents.ppo2 as PPO2
-        agent = PPO2.PPOAgent(sess, obs_dim, act_dim,
-                              num_env=args.num_env, horizon=2048,
-                              gamma=0.995, lam=0.97, fixed_lr=True)
+        agent = PPO2.PPOAgent(sess, obs_dim, act_dim, horizon=2048,
+                              gamma=0.995, lam=0.97, fixed_lr=False)
         # 1M // 2048 / 488 = 1
         log_interval = 1
     else:
@@ -201,8 +187,8 @@ def main():
     # Params
     horizon = agent.horizon
 
-    cprint(f'Running experiment: {args.alg}\n'
-           f'Env: {args.env}, Num_env: {args.num_env}\n'
+    cprint(f'Running experiment...\n'
+           f'Env: {args.env}, Alg: {args.alg}\n'
            f'Logging dir: {base_dir}\n',
            color='cyan', attrs=['bold'])
 
