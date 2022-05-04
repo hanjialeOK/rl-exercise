@@ -136,17 +136,14 @@ def main():
     # Hyperparameters in http://arxiv.org/abs/1709.06560
     if args.alg == 'A2C':
         import pg.agents.a2c as A2C
-        agent = A2C.A2CAgent(sess, obs_dim, act_dim, horizon=5)
+        agent = A2C.A2CAgent(sess, obs_dim, act_dim, horizon=5,
+                             gamma=0.995, lam=0.97)
         # 1M // 5 // 488 = 409
         log_interval = total_steps // agent.horizon // 488
     elif args.alg == 'VPG':
         import pg.agents.vpg as VPG
-        agent = VPG.VPGAgent(sess, obs_dim, act_dim, horizon=1024)
-        # 1M // 2048 / 488 = 1
-        log_interval = 2
-    elif args.alg == 'VPG_UN':
-        import pg.agents.vpg_united as VPG_UN
-        agent = VPG_UN.VPGAgent(sess, obs_dim, act_dim, horizon=1024)
+        agent = VPG.VPGAgent(sess, obs_dim, act_dim, horizon=1024,
+                             gamma=0.995, lam=0.97)
         # 1M // 2048 / 488 = 1
         log_interval = 2
     elif args.alg == 'TRPO':
@@ -154,7 +151,7 @@ def main():
         agent = TRPO.TRPOAgent(sess, obs_dim, act_dim, horizon=1024,
                                gamma=0.995, lam=0.97, cg_iters=10)
         # 1M // 1024 / 488 = 1
-        log_interval = 1
+        log_interval = 2
     elif args.alg == 'TRPO2':
         import pg.agents.trpo2 as TRPO2
         agent = TRPO2.TRPOAgent(sess, obs_dim, act_dim, horizon=1024,
