@@ -57,14 +57,14 @@ def main():
     parser.add_argument('--env', type=str,
                         default='Walker2d-v2')
     parser.add_argument('--alg', type=str, default='PPO',
-                        choices=['VPG', 'VPG_UN', 'TRPO', 'TRPO2',
-                                 'PPO', 'PPO2', 'PPOV', 'A2C'],
+                        choices=['A2C', 'VPG', 'TRPO', 'TRPO2',
+                                 'PPO', 'PPO2', 'PPOV', 'DISC', 'DISC2'],
                         help='Experiment name')
     parser.add_argument('--allow_eval', action='store_true',
                         help='Whether to eval agent')
     parser.add_argument('--save_model', action='store_true',
                         help='Whether to save model')
-    parser.add_argument('--total_steps', type=int, default=1e6,
+    parser.add_argument('--total_steps', type=float, default=1e6,
                         help='Total steps trained')
     args = parser.parse_args()
 
@@ -172,8 +172,20 @@ def main():
         log_interval = 1
     elif args.alg == 'PPO2':
         import pg.agents.ppo2 as PPO2
-        agent = PPO2.PPOAgent(sess, obs_dim, act_dim, horizon=2048,
+        agent = PPO2.PPOAgent(sess, summary_writer, obs_dim, act_dim, horizon=2048,
                               gamma=0.995, lam=0.97, fixed_lr=False)
+        # 1M // 2048 / 488 = 1
+        log_interval = 1
+    elif args.alg == 'DISC':
+        import pg.agents.disc as DISC
+        agent = DISC.PPOAgent(sess, summary_writer, obs_dim, act_dim, horizon=2048,
+                              gamma=0.995, lam=0.97, fixed_lr=False)
+        # 1M // 2048 / 488 = 1
+        log_interval = 1
+    elif args.alg == 'DISC2':
+        import pg.agents.disc2 as DISC2
+        agent = DISC2.PPOAgent(sess, summary_writer, obs_dim, act_dim, horizon=2048,
+                               gamma=0.995, lam=0.97, fixed_lr=False)
         # 1M // 2048 / 488 = 1
         log_interval = 1
     else:
@@ -225,16 +237,18 @@ def main():
                 ep_len = 0
                 ep_ret = 0.
 
+        # Progress ratio
         frac = 1.0 - (epoch - 1.0) / epochs
+        # Steps we have reached.
+        step = epoch * horizon
+        # Log to board
+        log2board = epoch % log_interval == 0
 
-        [pi_loss, v_loss, entropy, kl, gradclipfrac, lr] = agent.update(frac)
+        [pi_loss, vf_loss, ent, kl] = agent.update(frac, log2board, step)
 
         [rms_obs, rms_ret] = agent.buffer.get_rms_data()
         env.update_rms(obs=rms_obs, ret=rms_ret)
         agent.buffer.reset()
-
-        # Steps we have trained.
-        step = epoch * horizon
 
         if epoch % log_interval == 0:
             avg_ep_ret = np.mean(ep_ret_buf)
@@ -247,17 +261,13 @@ def main():
                 tf.compat.v1.Summary.Value(
                     tag="train/avgret", simple_value=avg_ep_ret),
                 tf.compat.v1.Summary.Value(
-                    tag="loss/avgkl", simple_value=kl),
-                tf.compat.v1.Summary.Value(
                     tag="loss/avgpiloss", simple_value=pi_loss),
                 tf.compat.v1.Summary.Value(
-                    tag="loss/avgvloss", simple_value=v_loss),
+                    tag="loss/avgvloss", simple_value=vf_loss),
                 tf.compat.v1.Summary.Value(
-                    tag="loss/avgentropy", simple_value=entropy),
+                    tag="loss/avgentropy", simple_value=ent),
                 tf.compat.v1.Summary.Value(
-                    tag="loss/gradclipfrac", simple_value=gradclipfrac),
-                tf.compat.v1.Summary.Value(
-                    tag="loss/lr", simple_value=lr)
+                    tag="loss/avgkl", simple_value=kl)
             ])
             summary_writer.add_summary(train_summary, step)
 
@@ -269,8 +279,8 @@ def main():
                              f'AvgLen: {avg_ep_len:.1f} | '
                              f'AvgRet: {avg_ep_ret:.1f}')
             log_infos.append(f'pi_loss: {pi_loss:.4f} | '
-                             f'v_loss: {v_loss:.4f} | '
-                             f'entropy: {entropy:.4f} | '
+                             f'v_loss: {vf_loss:.4f} | '
+                             f'entropy: {ent:.4f} | '
                              f'kl: {kl:.4f}')
             info_lens = [len(info) for info in log_infos]
             max_info_len = max(info_lens)
