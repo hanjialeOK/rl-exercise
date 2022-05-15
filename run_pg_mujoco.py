@@ -213,7 +213,9 @@ def main():
 
     epochs = total_steps // horizon
     # Openai spinningup implementation
-    for epoch in range(1, epochs + 1):
+    for epoch in range(0, epochs + 1):
+        # Clear buffer
+        agent.buffer.reset()
         for t in range(1, horizon + 1):
             ac = agent.select_action(obs)
 
@@ -237,6 +239,16 @@ def main():
                 ep_len = 0
                 ep_ret = 0.
 
+        # Update rms for env
+        [rms_obs, rms_ret] = agent.buffer.get_rms_data()
+        env.update_rms(obs=rms_obs, ret=rms_ret)
+
+        if epoch == 0:
+            ep_ret_buf.clear()
+            ep_len_buf.clear()
+            print('Initialized RMS for env.')
+            continue
+
         # Progress ratio
         frac = 1.0 - (epoch - 1.0) / epochs
         # Steps we have reached.
@@ -245,10 +257,6 @@ def main():
         log2board = epoch % log_interval == 0
 
         [pi_loss, vf_loss, ent, kl] = agent.update(frac, log2board, step)
-
-        [rms_obs, rms_ret] = agent.buffer.get_rms_data()
-        env.update_rms(obs=rms_obs, ret=rms_ret)
-        agent.buffer.reset()
 
         if epoch % log_interval == 0:
             avg_ep_ret = np.mean(ep_ret_buf)
