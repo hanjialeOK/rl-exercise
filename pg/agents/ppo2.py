@@ -58,12 +58,13 @@ class CriticMLP(tf.keras.Model):
 
 
 class PPOAgent(BaseAgent):
-    def __init__(self, sess, obs_dim, act_dim,
+    def __init__(self, sess, summary_writer, obs_dim, act_dim,
                  clip_ratio=0.2, lr=3e-4, train_iters=10, target_kl=0.01,
                  ent_coef=0.0, vf_coef=0.5, max_grad_norm=0.5,
                  horizon=2048, minibatch=64, gamma=0.99, lam=0.95,
                  grad_clip=True, vf_clip=True, fixed_lr=False):
         self.sess = sess
+        self.summary_writer = summary_writer
         self.obs_dim = obs_dim
         self.act_dim = act_dim
         self.clip_ratio = clip_ratio
@@ -151,10 +152,13 @@ class PPOAgent(BaseAgent):
 
         # Info (useful to watch during learning)
         # a sample estimate for KL-divergence, easy to compute
-        approx_kl = 0.5 * tf.reduce_mean(tf.square(logp_old_ph - logp_a))
-        clipped = tf.logical_or(
-            ratio > (1.0 + self.clip_ratio), ratio < (1.0 - self.clip_ratio))
-        clipfrac = tf.reduce_mean(tf.cast(clipped, tf.float32))
+        meankl = 0.5 * tf.reduce_mean(tf.square(logp_old_ph - logp_a))
+        absratio = tf.reduce_mean(tf.abs(ratio - 1.0) + 1.0)
+        ratioclipped = tf.where(
+            adv_ph > 0,
+            ratio > (1.0 + self.clip_ratio),
+            ratio < (1.0 - self.clip_ratio))
+        ratioclipfrac = tf.reduce_mean(tf.cast(ratioclipped, tf.float32))
 
         # Total loss
         loss = pi_loss - meanent * self.ent_coef + vf_loss * self.vf_coef
@@ -168,22 +172,26 @@ class PPOAgent(BaseAgent):
         if self.grad_clip:
             grads, _grad_norm = tf.clip_by_global_norm(
                 grads, self.max_grad_norm)
-            is_gradclipped = _grad_norm > self.max_grad_norm
+            gradclipped = _grad_norm > self.max_grad_norm
         grads_and_vars = list(zip(grads, vars))
 
         train_op = optimizer.apply_gradients(grads_and_vars)
 
         self.get_action_ops = get_action_ops
         self.v1 = v1
+        self.absratio = absratio
         self.pi_loss = pi_loss
         self.vf_loss = vf_loss
-        self.approx_kl = approx_kl
-        self.entropy = meanent
-        self.clipfrac = clipfrac
-        self.is_gradclipped = is_gradclipped
+        self.meankl = meankl
+        self.meanent = meanent
+        self.ratioclipfrac = ratioclipfrac
+        self.gradclipped = gradclipped
         self.train_op = train_op
 
-    def update(self, frac):
+        self.losses = [pi_loss, vf_loss, meanent, meankl]
+        self.infos = [absratio, ratioclipfrac, gradclipped]
+
+    def update(self, frac, log2board, step):
         buf_data = self.buffer.get()
         assert buf_data[0].shape[0] == self.horizon
 
@@ -191,9 +199,11 @@ class PPOAgent(BaseAgent):
 
         pi_loss_buf = []
         vf_loss_buf = []
-        entropy_buf = []
+        ent_buf = []
         kl_buf = []
-        is_gradclipped_buf = []
+        ratio_buf = []
+        ratioclipfrac_buf = []
+        gradclipped_buf = []
 
         indices = np.arange(self.horizon)
         for _ in range(self.train_iters):
@@ -216,19 +226,36 @@ class PPOAgent(BaseAgent):
                     self.lr_ph: lr,
                 }
 
-                pi_loss, vf_loss, entropy, kl, is_gradclipped, _ = self.sess.run(
-                    [self.pi_loss, self.vf_loss, self.entropy, self.approx_kl,
-                     self.is_gradclipped, self.train_op],
-                    feed_dict=inputs)
+                infos, losses, _ = self.sess.run(
+                    [self.infos, self.losses, self.train_op], feed_dict=inputs)
+                # Unpack losses
+                pi_loss, vf_loss, ent, kl = losses
                 pi_loss_buf.append(pi_loss)
                 vf_loss_buf.append(vf_loss)
-                entropy_buf.append(entropy)
+                ent_buf.append(ent)
                 kl_buf.append(kl)
-                is_gradclipped_buf.append(is_gradclipped)
+                # Unpack infos
+                ratio, ratioclipfrac, gradclipped = infos
+                ratio_buf.append(ratio)
+                ratioclipfrac_buf.append(ratioclipfrac)
+                gradclipped_buf.append(gradclipped)
+
+        # Here you can add any information you want to log!
+        if log2board:
+            train_summary = tf.compat.v1.Summary(value=[
+                tf.compat.v1.Summary.Value(
+                    tag="loss/gradclipfrac", simple_value=np.mean(gradclipped)),
+                tf.compat.v1.Summary.Value(
+                    tag="loss/lr", simple_value=lr),
+                tf.compat.v1.Summary.Value(
+                    tag="loss/ratio", simple_value=np.mean(ratio_buf)),
+                tf.compat.v1.Summary.Value(
+                    tag="loss/ratioclipfrac", simple_value=np.mean(ratioclipfrac_buf))
+            ])
+            self.summary_writer.add_summary(train_summary, step)
 
         return [np.mean(pi_loss_buf), np.mean(vf_loss_buf),
-                np.mean(entropy_buf), np.mean(kl_buf),
-                np.mean(is_gradclipped_buf), lr]
+                np.mean(ent_buf), np.mean(kl_buf)]
 
     def select_action(self, obs, deterministic=False):
         [mu, pi, v, logp_pi] = self.sess.run(
