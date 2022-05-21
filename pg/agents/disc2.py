@@ -140,6 +140,7 @@ class PPOAgent(BaseAgent):
         pi_loss2 = -adv_ph * tf.clip_by_value(
             ratio, 1.0 - self.clip_ratio, 1.0 + self.clip_ratio)
         pi_loss = tf.reduce_mean(tf.maximum(pi_loss1, pi_loss2))
+        abspiloss64 = tf.abs(tf.maximum(pi_loss1, pi_loss2))
 
         if self.vf_clip:
             valclipped = val_ph + \
@@ -166,7 +167,9 @@ class PPOAgent(BaseAgent):
             tf.square(ratio - (1.0 - self.clip_ratio)))
         # ratioerr = tf.square(ratio - 1.0)
         ratioctl = tf.reduce_mean(tf.cast(ratioclipped, tf.float32) * ratioerr)
-        pi_loss += 0.5 * ratioctl
+        pi_loss += 0.5 * ratioctl * 0.25
+        ratioloss64 = tf.cast(ratioclipped, tf.float32) * ratioerr
+        lossratio = tf.reduce_mean(0.5 * ratioloss64 / abspiloss64)
 
         # Total loss
         loss = pi_loss - meanent * self.ent_coef + vf_loss * self.vf_coef
@@ -197,7 +200,7 @@ class PPOAgent(BaseAgent):
         self.train_op = train_op
 
         self.losses = [ratioctl, pi_loss, vf_loss, meanent, meankl]
-        self.infos = [absratio, ratioclipfrac, gradclipped]
+        self.infos = [absratio, ratioclipfrac, gradclipped, lossratio]
 
     def update(self, frac, log2board, step):
         buf_data = self.buffer.get()
@@ -213,6 +216,7 @@ class PPOAgent(BaseAgent):
         ratioclipfrac_buf = []
         gradclipped_buf = []
         ratioctl_buf = []
+        lossratio_buf = []
 
         indices = np.arange(self.horizon)
         for _ in range(self.train_iters):
@@ -245,10 +249,11 @@ class PPOAgent(BaseAgent):
                 ent_buf.append(ent)
                 kl_buf.append(kl)
                 # Unpack infos
-                ratio, ratioclipfrac, gradclipped = infos
+                ratio, ratioclipfrac, gradclipped, lossratio = infos
                 ratio_buf.append(ratio)
                 ratioclipfrac_buf.append(ratioclipfrac)
                 gradclipped_buf.append(gradclipped)
+                lossratio_buf.append(lossratio)
 
         # Here you can add any information you want to log!
         if log2board:
@@ -262,7 +267,9 @@ class PPOAgent(BaseAgent):
                 tf.compat.v1.Summary.Value(
                     tag="loss/ratioclipfrac", simple_value=np.mean(ratioclipfrac_buf)),
                 tf.compat.v1.Summary.Value(
-                    tag="loss/ratioctl", simple_value=np.mean(ratioctl_buf))
+                    tag="loss/ratioctl", simple_value=np.mean(ratioctl_buf)),
+                tf.compat.v1.Summary.Value(
+                    tag="loss/lossratio", simple_value=np.mean(lossratio_buf))
             ])
             self.summary_writer.add_summary(train_summary, step)
 
