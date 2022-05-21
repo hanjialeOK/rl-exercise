@@ -11,19 +11,22 @@ class GAEBuffer:
     Openai spinningup implementation
     '''
 
-    def __init__(self, obs_dim, act_dim, size,  gamma=0.99, lam=0.95):
+    def __init__(self, obs_dim, act_dim, size, gamma=0.99, lam=0.95):
         self.obs_buf = np.zeros((size, ) + obs_dim, dtype=np.float64)
         self.act_buf = np.zeros((size, ) + act_dim, dtype=np.float32)
         self.adv_buf = np.zeros((size, ), dtype=np.float32)
         self.rew_buf = np.zeros((size, ), dtype=np.float32)
         self.done_buf = np.zeros((size, ), dtype=np.float32)
         self.ret_buf = np.zeros((size, ), dtype=np.float32)
-        self.val_buf = np.zeros((size+1, ), dtype=np.float32)
+        self.val_buf = np.zeros((size, ), dtype=np.float32)
+        self.next_val_buf = np.zeros((size, ), dtype=np.float32)
         self.logp_buf = np.zeros((size, ), dtype=np.float32)
-        self.gamma, self.lam = gamma, lam
-        self.ptr, self.max_size = 0, size
         self.obs_dim = obs_dim
         self.act_dim = act_dim
+        self.max_size = size
+        self.gamma = gamma
+        self.lam = lam
+        self.ptr = 0
         self.path_start_idx = 0
 
     def store(self, obs, act, rew, done, val, logp):
@@ -39,31 +42,36 @@ class GAEBuffer:
         self.ptr += 1
 
     def finish_path(self, last_val=None):
-        self.val_buf[self.ptr] = last_val
-        path_slice = slice(self.path_start_idx, self.ptr)
+        start = self.path_start_idx
+        self.next_val_buf[start:self.ptr-1] = self.val_buf[start+1:self.ptr]
+        self.next_val_buf[self.ptr-1] = last_val
 
         # GAE-Lambda advantage calculation
         lastgaelam = 0.0
         for t in reversed(range(self.path_start_idx, self.ptr)):
             delta = self.rew_buf[t] + \
-                self.gamma * self.val_buf[t + 1] - self.val_buf[t]
+                self.gamma * self.next_val_buf[t] - self.val_buf[t]
             self.adv_buf[t] = lastgaelam = \
                 delta + self.gamma * self.lam * lastgaelam
 
-        self.ret_buf[path_slice] = self.adv_buf[path_slice] + \
-            self.val_buf[path_slice]
+        self.ret_buf[start:self.ptr] = self.adv_buf[start:self.ptr] + \
+            self.val_buf[start:self.ptr]
 
         self.path_start_idx = self.ptr
-        pass
 
     def get(self):
         assert self.ptr == self.max_size
+
+        # Reset ptr
+        self.ptr = 0
+        self.path_start_idx = 0
+
         return [self.obs_buf,
                 self.act_buf,
                 self.adv_buf,
                 self.ret_buf,
                 self.logp_buf,
-                self.val_buf[:-1]]
+                self.val_buf]
 
     def get_rms_data(self):
         assert self.ptr == self.max_size
@@ -73,6 +81,118 @@ class GAEBuffer:
     def reset(self):
         self.ptr = 0
         self.path_start_idx = 0
+
+
+class GAEVBuffer:
+    '''
+    Openai spinningup implementation
+    '''
+
+    def __init__(self, obs_dim, act_dim, size, nlatest=1, gamma=0.99, lam=0.95):
+        max_size = size * nlatest
+        self.obs_buf = np.zeros((max_size, ) + obs_dim, dtype=np.float64)
+        self.act_buf = np.zeros((max_size, ) + act_dim, dtype=np.float32)
+        self.adv_buf = np.zeros((max_size, ), dtype=np.float32)
+        self.rew_buf = np.zeros((max_size, ), dtype=np.float32)
+        self.done_buf = np.zeros((max_size, ), dtype=np.float32)
+        self.trun_buf = np.zeros((max_size, ), dtype=np.float32)
+        self.ret_buf = np.zeros((max_size, ), dtype=np.float32)
+        self.val_buf = np.zeros((max_size, ), dtype=np.float32)
+        self.next_val_buf = np.zeros((max_size, ), dtype=np.float32)
+        self.logp_buf = np.zeros((max_size, ), dtype=np.float32)
+        self.rho_buf = np.zeros((max_size, ), dtype=np.float32)
+        self.obs_dim = obs_dim
+        self.act_dim = act_dim
+        self.max_size = max_size
+        self.size = size
+        self.gamma = gamma
+        self.lam = lam
+        self.ptr = 0
+        self.path_start_idx = 0
+        self.count = 0
+
+    def store(self, obs, act, rew, done, val, logp):
+        assert self.ptr < self.max_size
+        assert obs.shape == self.obs_dim
+        assert act.shape == self.act_dim
+        self.obs_buf[self.ptr] = obs
+        self.act_buf[self.ptr] = act
+        self.rew_buf[self.ptr] = rew
+        self.done_buf[self.ptr] = done
+        self.val_buf[self.ptr] = val
+        self.logp_buf[self.ptr] = logp
+        self.ptr += 1
+        self.count = min(self.count+1, self.max_size)
+
+    def finish_path(self, last_val=None):
+        start = self.path_start_idx
+        self.trun_buf[start:self.ptr-1] = 0
+        self.trun_buf[self.ptr-1] = 1
+        self.next_val_buf[start:self.ptr-1] = self.val_buf[start+1:self.ptr]
+        self.next_val_buf[self.ptr-1] = last_val
+
+        # GAE-Lambda advantage calculation
+        lastgaelam = 0.0
+        for t in reversed(range(self.path_start_idx, self.ptr)):
+            delta = self.rew_buf[t] + \
+                self.gamma * self.next_val_buf[t] - self.val_buf[t]
+            self.adv_buf[t] = lastgaelam = \
+                delta + self.gamma * self.lam * lastgaelam
+
+        self.ret_buf[start:self.ptr] = self.adv_buf[start:self.ptr] + \
+            self.val_buf[start:self.ptr]
+
+        self.path_start_idx = self.ptr
+
+    def vtrace(self, logp_a):
+        assert logp_a.shape[0] == self.count
+        assert self.ptr % self.size == 0 and self.ptr > 0
+        assert self.count % self.size == 0 and self.count > 0
+
+        rho = np.exp(logp_a - self.logp_buf[:self.count])
+        self.rho_buf[:self.count] = rho
+        # Reduce bias here!
+        rho = np.minimum(rho, 1.0)
+
+        lastgaelam = 0.0
+        for t in reversed(range(self.count)):
+            nontruncated = 1.0 - self.trun_buf[t]
+            delta = self.rew_buf[t] + self.gamma * \
+                self.next_val_buf[t] - self.val_buf[t]
+            self.adv_buf[t] = delta + \
+                self.gamma * self.lam * nontruncated * lastgaelam
+            lastgaelam = rho[t] * self.adv_buf[t]
+        self.ret_buf[:self.count] = self.adv_buf[:self.count] * \
+            rho + self.val_buf[:self.count]
+
+        # Reset ptr
+        if self.ptr == self.max_size:
+            self.ptr = 0
+            self.path_start_idx = 0
+
+        return [self.obs_buf[:self.count],
+                self.act_buf[:self.count],
+                self.adv_buf[:self.count],
+                self.ret_buf[:self.count],
+                self.logp_buf[:self.count],
+                self.val_buf[:self.count],
+                self.rho_buf[:self.count]]
+
+    def get_obs(self):
+        assert self.count % self.size == 0 and self.count > 0
+        return [self.obs_buf[:self.count],
+                self.act_buf[:self.count]]
+
+    def get_rms_data(self):
+        assert self.ptr % self.size == 0 and self.ptr > 0
+        # Return the latest RMS data
+        return [self.obs_buf[self.ptr-self.size:self.ptr],
+                self.ret_buf[self.ptr-self.size:self.ptr]]
+
+    def reset(self):
+        self.ptr = 0
+        self.path_start_idx = 0
+        self.count = 0
 
 
 class PPODistVBuffer:

@@ -58,7 +58,7 @@ def main():
                         default='Walker2d-v2')
     parser.add_argument('--alg', type=str, default='PPO',
                         choices=['A2C', 'VPG', 'TRPO', 'TRPO2',
-                                 'PPO', 'PPO2', 'PPOV', 'DISC', 'DISC2'],
+                                 'PPO', 'PPO2', 'PPOV', 'DISC', 'DISC2', 'GePPO'],
                         help='Experiment name')
     parser.add_argument('--allow_eval', action='store_true',
                         help='Whether to eval agent')
@@ -188,6 +188,12 @@ def main():
                                gamma=0.995, lam=0.97, fixed_lr=False)
         # 1M // 2048 / 488 = 1
         log_interval = 1
+    elif args.alg == 'GePPO':
+        import pg.agents.geppo as GePPO
+        agent = GePPO.PPOAgent(sess, summary_writer, obs_dim, act_dim, horizon=1024,
+                               gamma=0.995, lam=0.97, fixed_lr=False)
+        # 1M // 2048 / 488 = 1
+        log_interval = 2
     else:
         raise ValueError('Unknown agent: {}'.format(args.alg))
 
@@ -215,7 +221,7 @@ def main():
     # Openai spinningup implementation
     for epoch in range(0, epochs + 1):
         # Clear buffer
-        agent.buffer.reset()
+        # agent.buffer.reset()
         for t in range(1, horizon + 1):
             ac = agent.select_action(obs)
 
@@ -246,6 +252,7 @@ def main():
         if epoch == 0:
             ep_ret_buf.clear()
             ep_len_buf.clear()
+            agent.buffer.reset()
             print('Initialized RMS for env.')
             continue
 
