@@ -241,7 +241,7 @@ class PPOAgent(BaseAgent):
                     self.logp_old_ph: logprobs,
                     self.val_ph: values,
                     self.rho_ph: rhos,
-                    self.lr_ph: self.lr,
+                    self.lr_ph: self.lr
                 }
 
                 infos, losses, _ = self.sess.run(
