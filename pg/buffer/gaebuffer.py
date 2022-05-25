@@ -144,12 +144,12 @@ class GAEVBuffer:
 
         self.path_start_idx = self.ptr
 
-    def vtrace(self, logp_a):
-        assert logp_a.shape[0] == self.count
+    def vtrace(self, logp_pik):
+        assert logp_pik.shape[0] == self.count
         assert self.ptr % self.size == 0 and self.ptr > 0
         assert self.count % self.size == 0 and self.count > 0
 
-        rho = np.exp(logp_a - self.logp_buf[:self.count])
+        rho = np.exp(logp_pik - self.logp_buf[:self.count])
         self.rho_buf[:self.count] = rho
         # Reduce bias here!
         rho = np.minimum(rho, 1.0)
