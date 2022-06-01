@@ -2,10 +2,6 @@ import numpy as np
 import scipy.signal
 
 
-def discount_cumsum(x, discount):
-    return scipy.signal.lfilter([1], [1, float(-discount)], x[::-1], axis=0)[::-1]
-
-
 class GAEBuffer:
     '''
     Openai spinningup implementation
@@ -91,6 +87,7 @@ class GAEVBuffer:
     def __init__(self, obs_dim, act_dim, size, nlatest=1, gamma=0.99, lam=0.95):
         max_size = size * nlatest
         self.obs_buf = np.zeros((max_size, ) + obs_dim, dtype=np.float64)
+        self.obs2_buf = np.zeros((max_size, ) + obs_dim, dtype=np.float64)
         self.act_buf = np.zeros((max_size, ) + act_dim, dtype=np.float32)
         self.adv_buf = np.zeros((max_size, ), dtype=np.float32)
         self.rew_buf = np.zeros((max_size, ), dtype=np.float32)
@@ -105,6 +102,7 @@ class GAEVBuffer:
         self.act_dim = act_dim
         self.max_size = max_size
         self.size = size
+        self.nlatest = nlatest
         self.gamma = gamma
         self.lam = lam
         self.ptr = 0
@@ -124,30 +122,38 @@ class GAEVBuffer:
         self.ptr += 1
         self.count = min(self.count+1, self.max_size)
 
-    def finish_path(self, last_val=None):
+    def finish_path(self, last_ob=None, last_val=None):
         start = self.path_start_idx
         self.trun_buf[start:self.ptr-1] = 0
         self.trun_buf[self.ptr-1] = 1
         self.next_val_buf[start:self.ptr-1] = self.val_buf[start+1:self.ptr]
         self.next_val_buf[self.ptr-1] = last_val
+        self.obs2_buf[start:self.ptr-1] = self.obs_buf[start+1:self.ptr]
+        self.obs2_buf[self.ptr-1] = last_ob
 
         # GAE-Lambda advantage calculation
         lastgaelam = 0.0
         for t in reversed(range(self.path_start_idx, self.ptr)):
+            nontruncated = 1.0 - self.trun_buf[t]
             delta = self.rew_buf[t] + \
                 self.gamma * self.next_val_buf[t] - self.val_buf[t]
-            self.adv_buf[t] = lastgaelam = \
-                delta + self.gamma * self.lam * lastgaelam
+            self.adv_buf[t] = \
+                delta + self.gamma * nontruncated * lastgaelam
+            lastgaelam = self.adv_buf[t]
 
         self.ret_buf[start:self.ptr] = self.adv_buf[start:self.ptr] + \
             self.val_buf[start:self.ptr]
 
         self.path_start_idx = self.ptr
 
-    def vtrace(self, logp_pik):
-        assert logp_pik.shape[0] == self.count
-        assert self.ptr % self.size == 0 and self.ptr > 0
+    def vtrace(self, compute_v_pik, compute_logp_pik):
+        assert self.ptr == self.size
         assert self.count % self.size == 0 and self.count > 0
+
+        v_pik = compute_v_pik(self.obs_buf[:self.count])
+        next_v_pik = compute_v_pik(self.obs2_buf[:self.count])
+        logp_pik = compute_logp_pik(self.obs_buf[:self.count],
+                                    self.act_buf[:self.count])
 
         rho = np.exp(logp_pik - self.logp_buf[:self.count])
         self.rho_buf[:self.count] = rho
@@ -156,38 +162,54 @@ class GAEVBuffer:
 
         lastgaelam = 0.0
         for t in reversed(range(self.count)):
+            nondone = 1.0 - self.done_buf[t]
             nontruncated = 1.0 - self.trun_buf[t]
-            delta = self.rew_buf[t] + self.gamma * \
-                self.next_val_buf[t] - self.val_buf[t]
+            delta = self.rew_buf[t] + \
+                self.gamma * nondone * next_v_pik[t] - v_pik[t]
             self.adv_buf[t] = delta + \
                 self.gamma * self.lam * nontruncated * lastgaelam
             lastgaelam = rho[t] * self.adv_buf[t]
-        self.ret_buf[:self.count] = self.adv_buf[:self.count] * \
-            rho + self.val_buf[:self.count]
+        self.ret_buf[:self.count] = self.adv_buf[:self.count] * rho + v_pik
 
         # Reset ptr
-        if self.ptr == self.max_size:
-            self.ptr = 0
-            self.path_start_idx = 0
+        self.ptr = 0
+        self.path_start_idx = 0
 
-        return [self.obs_buf[:self.count],
-                self.act_buf[:self.count],
-                self.adv_buf[:self.count],
-                self.ret_buf[:self.count],
-                self.logp_buf[:self.count],
-                self.val_buf[:self.count],
-                self.rho_buf[:self.count]]
+        return [self.obs_buf[:self.count].copy(),
+                self.act_buf[:self.count].copy(),
+                self.adv_buf[:self.count].copy(),
+                self.ret_buf[:self.count].copy(),
+                self.logp_buf[:self.count].copy(),
+                self.val_buf[:self.count].copy(),
+                self.rho_buf[:self.count].copy()]
 
-    def get_obs(self):
-        assert self.count % self.size == 0 and self.count > 0
-        return [self.obs_buf[:self.count],
-                self.act_buf[:self.count]]
+    def update(self):
+        index1 = 1 * self.size
+        index2 = (self.nlatest-1) * self.size
+        self.obs_buf[index1:] = self.obs_buf[:index2]
+        self.obs2_buf[index1:] = self.obs2_buf[:index2]
+        self.act_buf[index1:] = self.act_buf[:index2]
+        self.adv_buf[index1:] = self.adv_buf[:index2]
+        self.rew_buf[index1:] = self.rew_buf[:index2]
+        self.done_buf[index1:] = self.done_buf[:index2]
+        self.trun_buf[index1:] = self.trun_buf[:index2]
+        self.ret_buf[index1:] = self.ret_buf[:index2]
+        self.val_buf[index1:] = self.val_buf[:index2]
+        self.next_val_buf[index1:] = self.next_val_buf[:index2]
+        self.logp_buf[index1:] = self.logp_buf[:index2]
+        self.rho_buf[index1:] = self.rho_buf[:index2]
+
+    # def get_obs(self):
+    #     assert self.count % self.size == 0 and self.count > 0
+    #     return [self.obs_buf[:self.count],
+    #             self.obs2_buf[:self.count],
+    #             self.act_buf[:self.count]]
 
     def get_rms_data(self):
-        assert self.ptr % self.size == 0 and self.ptr > 0
+        assert self.ptr == self.size
         # Return the latest RMS data
-        return [self.obs_buf[self.ptr-self.size:self.ptr],
-                self.ret_buf[self.ptr-self.size:self.ptr]]
+        return [self.obs_buf[:self.ptr],
+                self.ret_buf[:self.ptr]]
 
     def reset(self):
         self.ptr = 0

@@ -15,16 +15,27 @@ class VecNormalize():
         self.epsilon = epsilon
         self.ac_low = self.env.action_space.low[0]
         self.ac_high = self.env.action_space.high[0]
+        # self.obs_buf = []
+        # self.rew_buf = []
+        # self.done_buf = []
 
     def step(self, ac):
         ac = np.nan_to_num(ac)
         ac = np.clip(ac, self.ac_low, self.ac_high)
         obs, rew, done, info = self.env.step(ac)
+        self.raw_obs = obs.copy()
+        self.raw_rew = rew
+        # self.obs_buf.append(self.raw_obs)
+        # self.rew_buf.append(self.raw_rew)
+        # self.done_buf.append(done)
         obs = self._obfilt(obs)
         if self.ret_rms:
             rew = np.clip(rew / np.sqrt(self.ret_rms.var + self.epsilon),
                           -self.cliprew, self.cliprew)
         return obs, rew, done, info
+
+    def get_raw(self):
+        return self.raw_obs, self.raw_rew
 
     def _obfilt(self, obs):
         if self.ob_rms:
@@ -37,12 +48,28 @@ class VecNormalize():
         return self._obfilt(obs)
 
     def update_rms(self, obs, ret):
+        # obs_all = np.vstack(self.obs_buf).astype(np.float64)
+        # rew_all = np.array(self.rew_buf).astype(np.float32)
+        # done_all = np.array(self.done_buf).astype(np.float32)
+        # ret_all = np.zeros_like(rew_all)
+        # lastrew = 0.0
+        # for t in reversed(range(done_all.shape[0])):
+        #     nondone = 1 - done_all[t]
+        #     ret_all[t] = rew_all[t] + 0.995 * nondone * lastrew
+        #     lastrew = ret_all[t]
+
         if self.ob_rms:
             obs_raw = self._unnormalize_obs(obs)
             self.ob_rms.update(obs_raw)
+            # self.ob_rms.update(obs_all)
         if self.ret_rms:
             ret_raw = self._unnormalize_ret(ret)
             self.ret_rms.update(ret_raw)
+            # self.ret_rms.update(ret_all)
+
+        # self.obs_buf = []
+        # self.rew_buf = []
+        # self.done_buf = []
 
     def _unnormalize_obs(self, obs):
         if self.ob_rms:

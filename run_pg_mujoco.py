@@ -5,6 +5,7 @@ import time
 import os
 import argparse
 import collections
+import pickle
 
 # from common.cmd_util import make_vec_env
 from common.vec_normalize import VecNormalize
@@ -15,6 +16,7 @@ from termcolor import cprint, colored
 from common.serialization_utils import convert_json, save_json
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+# os.environ['TF_DETERMINISTIC_OPS'] = '1'
 
 
 def evaluate(env_eval, agent, n_eval_episodes=10):
@@ -58,7 +60,7 @@ def main():
                         default='Walker2d-v2')
     parser.add_argument('--alg', type=str, default='PPO',
                         choices=['A2C', 'VPG', 'TRPO', 'TRPO2',
-                                 'PPO', 'PPO2', 'PPOV', 'DISC', 'DISC2', 'GePPO'],
+                                 'PPO', 'PPO2', 'PPOV', 'DISC', 'DISC2', 'DISC3', 'GePPO'],
                         help='Experiment name')
     parser.add_argument('--allow_eval', action='store_true',
                         help='Whether to eval agent')
@@ -109,6 +111,8 @@ def main():
     env_eval.seed(seed)
     obs_dim = env.observation_space.shape
     act_dim = env.action_space.shape
+    ac_max = float(env.action_space.high[0])
+    ac_min = float(env.action_space.low[0])
 
     # Normalized rew and obs
     env = VecNormalize(env)
@@ -188,6 +192,12 @@ def main():
                                gamma=0.995, lam=0.97, fixed_lr=False)
         # 1M // 2048 / 488 = 1
         log_interval = 1
+    elif args.alg == 'DISC3':
+        import pg.agents.disc3 as DISC3
+        agent = DISC3.PPOAgent(sess, summary_writer, obs_dim, act_dim, horizon=2048,
+                               gamma=0.995, lam=0.97, fixed_lr=False)
+        # 1M // 2048 / 488 = 1
+        log_interval = 1
     elif args.alg == 'GePPO':
         import pg.agents.geppo as GePPO
         agent = GePPO.PPOAgent(sess, summary_writer, obs_dim, act_dim, horizon=1024,
@@ -198,6 +208,25 @@ def main():
         raise ValueError('Unknown agent: {}'.format(args.alg))
 
     sess.run(tf.compat.v1.global_variables_initializer())
+    # agent.actor.save_weights('/data/hanjl/debug_data/actor_weight')
+    # agent.critic.save_weights('/data/hanjl/debug_data/critic_weight')
+    # with open(f'/data/hanjl/debug_data/actor_weight.pkl', 'wb') as f:
+    #     pickle.dump(sess.run(agent.pi_flatted), f)
+    # with open(f'/data/hanjl/debug_data/critic_weight.pkl', 'wb') as f:
+    #     pickle.dump(sess.run(agent.vf_flatted), f)
+    # agent.actor.load_weights('/data/hanjl/debug_data/param')
+    # with open('/data/hanjl/debug_data/actor_param.pkl', 'rb') as f:
+    #     actor_param = pickle.load(f)
+    #     agent.assign_actor_weights(actor_param)
+    # with open('/data/hanjl/debug_data/critic_param.pkl', 'rb') as f:
+    #     critic_param = pickle.load(f)
+    #     agent.assign_critic_weights(critic_param)
+
+    # with open(f'/data/hanjl/debug_data/buf_data_1.pkl', 'rb') as f:
+    #     buf_data = pickle.load(f)
+
+    # [s_all, a_all, adv_all, rtg_all, neglogp_old_all, v_all, rho_all] = buf_data
+    # v = sess.run(agent.v, feed_dict={agent.obs_ph: s_all})
 
     # Params
     horizon = agent.horizon
@@ -226,8 +255,9 @@ def main():
             ac = agent.select_action(obs)
 
             next_obs, reward, done, info = env.step(ac)
+            raw_obs, raw_rew = env.get_raw()
             ep_len += 1
-            ep_ret += env._unnormalize_ret(reward)
+            ep_ret += raw_rew
 
             done = done if ep_len < max_ep_len else False
             agent.store_transition(obs, ac, reward, done)
@@ -237,7 +267,7 @@ def main():
             terminal = done or ep_len == max_ep_len
             if terminal or t == horizon:
                 last_val = 0. if done else agent.compute_v(next_obs)
-                agent.buffer.finish_path(last_val)
+                agent.buffer.finish_path(next_obs, last_val)
                 if terminal:
                     ep_ret_buf.append(ep_ret)
                     ep_len_buf.append(ep_len)

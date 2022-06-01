@@ -2,6 +2,7 @@ import numpy as np
 import tensorflow as tf
 import tensorflow_probability as tfp
 import os
+import pickle
 
 from pg.agents.base import BaseAgent
 import pg.buffer.gaebuffer as Buffer
@@ -10,6 +11,19 @@ import pg.buffer.gaebuffer as Buffer
 def tf_ortho_init(scale):
     return tf.keras.initializers.Orthogonal(scale)
 
+def flat(var_list):
+    return tf.concat([tf.reshape(v, (-1,)) for v in var_list], axis=0)
+
+def setfromflat(var_list, theta):
+    shapes = [v.get_shape().as_list() for v in var_list]
+    assigns = []
+    start = 0
+    for (v, shape) in zip(var_list, shapes):
+        size = int(np.prod(shape))
+        new = theta[start:start+size]
+        assigns.append(tf.assign(v, tf.reshape(new, shape)))
+        start += size
+    return assigns
 
 class ActorMLP(tf.keras.Model):
     def __init__(self, ac_dim, name=None):
@@ -61,7 +75,7 @@ class PPOAgent(BaseAgent):
     def __init__(self, sess, summary_writer, obs_dim, act_dim,
                  clip_ratio=0.1, lr=3e-4, train_iters=10, target_kl=0.01,
                  ent_coef=0.0, vf_coef=0.5, max_grad_norm=0.5,
-                 horizon=1024, minibatch=32, gamma=0.99, lam=0.95,
+                 horizon=1024, nminibatches=32, gamma=0.99, lam=0.95,
                  grad_clip=True, vf_clip=False, fixed_lr=False,
                  thresh=0.5, alpha=0.03, nlatest=3):
         self.sess = sess
@@ -73,12 +87,11 @@ class PPOAgent(BaseAgent):
         self.train_iters = train_iters
         self.target_kl = target_kl
         self.horizon = horizon
-        self.minibatch = minibatch
+        self.nminibatches = nminibatches
         self.ent_coef = ent_coef
         self.vf_coef = vf_coef
         self.max_grad_norm = max_grad_norm
         self.grad_clip = grad_clip
-        self.vf_clip = vf_clip
         self.fixed_lr = fixed_lr
         self.thresh = thresh
         self.alpha = alpha
@@ -89,10 +102,23 @@ class PPOAgent(BaseAgent):
         self._build_network()
         self._build_train_op()
         self.saver = self._build_saver()
+        # self.sync_op = self._build_sync_op()
+        # self.actor_assign = self.setactorfromflat()
+        # self.critic_assign = self.setcriticfromflat()
 
     def _build_network(self):
         self.actor = ActorMLP(self.act_dim, name='pi')
+        # self.actor_pik = ActorMLP(self.act_dim, name='pik')
         self.critic = CriticMLP(name='vf')
+
+    # def _build_sync_op(self):
+    #     sync_ops = []
+    #     pi_params = self._get_var_list('pi')
+    #     pik_params = self._get_var_list('pik')
+
+    #     for (newv, oldv) in zip(pi_params, pik_params):
+    #         sync_ops.append(oldv.assign(newv, use_locking=True))
+    #     return sync_ops
 
     def _build_train_op(self):
         self.ob1_ph = ob1_ph = tf.compat.v1.placeholder(
@@ -118,7 +144,11 @@ class PPOAgent(BaseAgent):
         logstd = tf.compat.v1.get_variable(
             name='pi/logstd', shape=(1, self.act_dim[0]),
             initializer=tf.zeros_initializer)
+        # logstd_pik = tf.compat.v1.get_variable(
+        #     name='pik/logstd', shape=(1, self.act_dim[0]),
+        #     initializer=tf.zeros_initializer)
         std = tf.exp(logstd)
+        # std_pik = tf.exp(logstd_pik)
 
         # Interative with env
         mu1 = self.actor(ob1_ph)
@@ -137,11 +167,16 @@ class PPOAgent(BaseAgent):
         entropy = tf.reduce_sum(dist.entropy(), axis=1)
         meanent = tf.reduce_mean(entropy)
 
+        # mu_pik = self.actor_pik(obs_ph)
+        # dist_pik = tfp.distributions.Normal(loc=mu_pik, scale=std_pik)
+        # logp_pik = tf.reduce_sum(dist_pik.log_prob(act_ph), axis=1)
+
         v = self.critic(obs_ph)
 
         # PPO objectives
         # pi(a|s) / pi_old(a|s), should be one at the first iteration
         ratio = tf.exp(logp_a - logp_old_ph)
+        # rho = tf.exp(logp_pik - logp_old_ph)
         pi_loss1 = -adv_ph * ratio
         pi_loss2 = -adv_ph * tf.clip_by_value(
             ratio, rho_ph - self.clip_ratio, rho_ph + self.clip_ratio)
@@ -149,14 +184,7 @@ class PPOAgent(BaseAgent):
 
         tv = 0.5 * tf.reduce_mean(tf.abs(ratio - rho_ph))
 
-        if self.vf_clip:
-            valclipped = val_ph + \
-                tf.clip_by_value(v - val_ph, -self.clip_ratio, self.clip_ratio)
-            vf_loss1 = tf.square(v - ret_ph)
-            vf_loss2 = tf.square(valclipped - ret_ph)
-            vf_loss = 0.5 * tf.reduce_mean(tf.maximum(vf_loss1, vf_loss2))
-        else:
-            vf_loss = 0.5 * tf.reduce_mean(tf.square(v - ret_ph))
+        vf_loss = 0.5 * tf.reduce_mean(tf.square(v - ret_ph))
 
         # Info (useful to watch during learning)
         # a sample estimate for KL-divergence, easy to compute
@@ -172,10 +200,14 @@ class PPOAgent(BaseAgent):
         loss = pi_loss - meanent * self.ent_coef + vf_loss * self.vf_coef
 
         # Optimizers
-        optimizer = tf.compat.v1.train.AdamOptimizer(
-            learning_rate=lr_ph, epsilon=1e-5)
-        params = self._get_var_list('pi') + self._get_var_list('vf')
-        grads_and_vars = optimizer.compute_gradients(loss, var_list=params)
+        pi_optimizer = tf.compat.v1.train.AdamOptimizer(
+            learning_rate=lr_ph)
+        vf_optimizer = tf.compat.v1.train.AdamOptimizer(
+            learning_rate=self.lr)
+        pi_params = self._get_var_list('pi')
+        vf_params = self._get_var_list('vf')
+        grads_and_vars = pi_optimizer.compute_gradients(
+            pi_loss, var_list=pi_params)
         grads, vars = zip(*grads_and_vars)
         if self.grad_clip:
             grads, _grad_norm = tf.clip_by_global_norm(
@@ -183,11 +215,13 @@ class PPOAgent(BaseAgent):
             gradclipped = _grad_norm > self.max_grad_norm
         grads_and_vars = list(zip(grads, vars))
 
-        train_op = optimizer.apply_gradients(grads_and_vars)
+        pi_train_op = pi_optimizer.apply_gradients(grads_and_vars)
+        vf_train_op = vf_optimizer.minimize(vf_loss, var_list=vf_params)
 
         self.get_action_ops = get_action_ops
         self.logp_a = logp_a
         self.v1 = v1
+        self.v = v
         self.absratio = absratio
         self.pi_loss = pi_loss
         self.vf_loss = vf_loss
@@ -196,17 +230,30 @@ class PPOAgent(BaseAgent):
         self.tv = tv
         self.ratioclipfrac = ratioclipfrac
         self.gradclipped = gradclipped
-        self.train_op = train_op
+        # self.train_op = train_op
+        self.pi_train_op = pi_train_op
+        self.vf_train_op = vf_train_op
 
         self.losses = [pi_loss, vf_loss, meanent, meankl, tv]
         self.infos = [absratio, ratioclipfrac, gradclipped]
+        self.count = 0
+
+        self.pi_flatted = flat(pi_params)
+        self.vf_flatted = flat(vf_params)
 
     def update(self, frac, log2board, step):
-        obs_all, ac_all = self.buffer.get_obs()
-        logp_inputs = {self.obs_ph: obs_all, self.act_ph: ac_all}
-        logp_a = self.sess.run(self.logp_a, feed_dict=logp_inputs)
-        buf_data = self.buffer.vtrace(logp_a)
+        # obs_all, obs2_all, ac_all = self.buffer.get_obs()
+        # v_pik = self.sess.run(self.v, feed_dict={ self.obs_ph: obs_all })
+        # v2_pik = self.sess.run(self.v, feed_dict={ self.obs_ph: obs2_all })
+        # logp_inputs = {self.obs_ph: obs_all, self.act_ph: ac_all}
+        # logp_pik = self.sess.run(self.logp_a, feed_dict=logp_inputs)
+        buf_data = self.buffer.vtrace(self.compute_v_pik, self.compute_logp_pik)
+        self.buffer.update()
         [obs_all, ac_all, adv_all, ret_all, logp_all, v_all, rho_all] = buf_data
+
+        # self.count += 1
+        # with open(f'/data/hanjl/debug_data/buf_data_{self.count}.pkl', 'wb') as f:
+        #     pickle.dump(buf_data, f)
 
         lr = self.lr if self.fixed_lr else self.lr * frac
 
@@ -220,13 +267,14 @@ class PPOAgent(BaseAgent):
         gradclipped_buf = []
 
         length = obs_all.shape[0]
+        minibatch = length // self.nminibatches
         indices = np.arange(length)
         for _ in range(self.train_iters):
             # Randomize the indexes
             np.random.shuffle(indices)
             # 0 to batch_size with batch_train_size step
-            for start in range(0, length, self.minibatch):
-                end = start + self.minibatch
+            for start in range(0, length, minibatch):
+                end = start + minibatch
                 mbinds = indices[start:end]
                 slices = [arr[mbinds] for arr in buf_data]
                 [obs, actions, advs, rets, logprobs, values, rhos] = slices
@@ -239,13 +287,12 @@ class PPOAgent(BaseAgent):
                     self.adv_ph: advs,
                     self.ret_ph: rets,
                     self.logp_old_ph: logprobs,
-                    self.val_ph: values,
                     self.rho_ph: rhos,
                     self.lr_ph: self.lr
                 }
 
-                infos, losses, _ = self.sess.run(
-                    [self.infos, self.losses, self.train_op], feed_dict=inputs)
+                infos, losses, _, _ = self.sess.run(
+                    [self.infos, self.losses, self.pi_train_op, self.vf_train_op], feed_dict=inputs)
                 # Unpack losses
                 pi_loss, vf_loss, ent, kl, tv = losses
                 pi_loss_buf.append(pi_loss)
@@ -307,3 +354,35 @@ class PPOAgent(BaseAgent):
         [v, logp_pi] = self.extra_info
         self.buffer.store(obs, action, reward, done,
                           v[0], logp_pi[0])
+
+    def compute_v_pik(self, obs):
+        return self.sess.run(self.v, feed_dict={self.obs_ph: obs})
+
+    def compute_logp_pik(self, obs, ac):
+        inputs = {
+            self.obs_ph: obs,
+            self.act_ph: ac
+        }
+        return self.sess.run(self.logp_a, feed_dict=inputs)
+
+    # def setactorfromflat(self):
+    #     var_list = self._get_var_list('pi')
+    #     x = flat(var_list)
+    #     self.actor_param_ph = tf.compat.v1.placeholder(
+    #         shape=x.shape, dtype=tf.float32, name="actor_param_ph")
+    #     assigns = setfromflat(var_list, self.actor_param_ph)
+    #     return assigns
+
+    # def setcriticfromflat(self):
+    #     var_list = self._get_var_list('vf')
+    #     x = flat(var_list)
+    #     self.critic_param_ph = tf.compat.v1.placeholder(
+    #         shape=x.shape, dtype=tf.float32, name="critic_param_ph")
+    #     assigns = setfromflat(var_list, self.critic_param_ph)
+    #     return assigns
+
+    # def assign_actor_weights(self, param):
+    #     self.sess.run(self.actor_assign, feed_dict={self.actor_param_ph: param})
+
+    # def assign_critic_weights(self, param):
+    #     self.sess.run(self.critic_assign, feed_dict={self.critic_param_ph: param})
