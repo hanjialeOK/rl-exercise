@@ -88,9 +88,11 @@ class PPOAgent(BaseAgent):
         self._build_network()
         self._build_train_op()
         self.saver = self._build_saver()
+        self.sync_op = self._build_sync_op()
 
     def _build_network(self):
         self.actor = ActorMLP(self.act_dim, name='pi')
+        self.actor_pik = ActorMLP(self.act_dim, name='pik')
         self.critic = CriticMLP(name='vf')
 
     def _build_train_op(self):
@@ -121,7 +123,11 @@ class PPOAgent(BaseAgent):
         logstd = tf.compat.v1.get_variable(
             name='pi/logstd', shape=(1, self.act_dim[0]),
             initializer=tf.zeros_initializer)
+        logstd_pik = tf.compat.v1.get_variable(
+            name='pik/logstd_pik', shape=(1, self.act_dim[0]),
+            initializer=tf.zeros_initializer)
         std = tf.exp(logstd)
+        std_pik = tf.exp(logstd_pik)
 
         # Interative with env
         mu1 = self.actor(ob1_ph)
@@ -141,6 +147,12 @@ class PPOAgent(BaseAgent):
         logp_a_disc = dist.log_prob(act_ph)
         entropy = tf.reduce_sum(dist.entropy(), axis=1)
         meanent = tf.reduce_mean(entropy)
+
+        mu_pik = tf.stop_gradient(self.actor_pik(obs_ph))
+        dist_pik = tfp.distributions.Normal(loc=mu_pik, scale=std_pik)
+        kl = tf.reduce_sum(dist.kl_divergence(dist_pik), axis=1)
+        meankl = tf.reduce_mean(kl)
+        # approxkl = 0.5 * tf.reduce_mean(tf.square(logp_pik_ph - logp_a))
 
         v = self.critic(obs_ph)
 
@@ -162,7 +174,10 @@ class PPOAgent(BaseAgent):
         # pi_loss2 = -adv_ph * tf.clip_by_value(
         #     ratio2, 1.0 - self.clip_ratio, 1.0 + self.clip_ratio)
         # pi_loss = tf.reduce_mean(tf.maximum(pi_loss1, pi_loss2))
-        pi_loss_ctl = 0.5 * tf.reduce_mean(tf.square(tf.log(ratio))*on_policy_ph)
+        logp_pik = tf.reduce_sum(logp_disc_pik_ph, axis=1)
+        logp_a = tf.reduce_sum(logp_a_disc, axis=1)
+        approxkl = 0.5 * tf.reduce_mean(tf.square(logp_pik - logp_a))
+        pi_loss_ctl = 0.5 * tf.reduce_mean(tf.square(logp_pik - logp_a)*on_policy_ph)
 
         pi_loss = -tf.reduce_mean(adv_ph * ratio2) + alpha_ph * pi_loss_ctl
 
@@ -177,9 +192,7 @@ class PPOAgent(BaseAgent):
 
         # Info (useful to watch during learning)
         # a sample estimate for KL-divergence, easy to compute
-        logp_old = tf.reduce_sum(logp_disc_pik_ph, axis=1)
-        logp_a = tf.reduce_sum(logp_a_disc, axis=1)
-        meankl = 0.5 * tf.reduce_mean(tf.square(logp_old - logp_a))
+        # meankl = 0.5 * tf.reduce_mean(tf.square(logp_old - logp_a))
         absratio = tf.reduce_mean(tf.abs(ratio - 1.0) + 1.0)
         ratioclipped = tf.where(
             adv_ph > 0,
@@ -221,6 +234,15 @@ class PPOAgent(BaseAgent):
         self.losses = [pi_loss_ctl, pi_loss, vf_loss, meanent, meankl]
         self.infos = [absratio, ratioclipfrac, gradclipped]
 
+    def _build_sync_op(self):
+        sync_qt_ops = []
+        pi_params = self._get_var_list('pi')
+        pi_params_old = self._get_var_list('pik')
+
+        for (newv, oldv) in zip(pi_params, pi_params_old):
+            sync_qt_ops.append(oldv.assign(newv, use_locking=True))
+        return sync_qt_ops
+
     def update(self, frac, log2board, step):
         # obs_all, obs2_all, ac_all = self.buffer.get_obs()
         # v_pik = self.sess.run(self.v, feed_dict={ self.obs_ph: obs_all })
@@ -248,6 +270,8 @@ class PPOAgent(BaseAgent):
         logp_disc_pik_filter = []
         weights_filter = []
         rho_filter = []
+
+        self.sess.run(self.sync_op)
 
         for s in range(n_trajs):
             start = s*self.horizon
@@ -277,7 +301,7 @@ class PPOAgent(BaseAgent):
         n_trajs_active = obs_filter.shape[0] // self.horizon
 
         on_policy = np.zeros_like(adv_filter)
-        on_policy[-self.horizon:] = 1
+        on_policy[:self.horizon] = n_trajs_active
         # self.count += 1
         # with open(f'/data/hanjl/debug_data/buf_data_{self.count}.pkl', 'wb') as f:
         #     pickle.dump(buf_data, f)
@@ -300,11 +324,20 @@ class PPOAgent(BaseAgent):
         indices = np.arange(length)
         for _ in range(self.train_iters):
             # Randomize the indexes
-            np.random.shuffle(indices)
+            # np.random.shuffle(indices)
             # 0 to batch_size with batch_train_size step
-            for start in range(0, length, minibatch):
-                end = start + minibatch
-                mbinds = indices[start:end]
+            # for start in range(0, length, minibatch):
+            for _ in range(self.nminibatches):
+                minibatch_on = self.horizon // self.nminibatches
+                idx_on = np.random.choice(indices[:self.horizon], minibatch_on)
+                if length > self.horizon:
+                    minibatch_off = (length - self.horizon) // self.nminibatches
+                    idx_off = np.random.choice(indices[self.horizon:], minibatch_off)
+                else:
+                    idx_off = []
+                mbinds = np.concatenate([idx_on, idx_off]).astype(np.int64)
+                # end = start + minibatch
+                # mbinds = indices[start:end]
                 # slices = [arr[mbinds] for arr in buf_data]
                 # [obs, actions, advs, rets, logprobs, values, rhos] = slices
                 advs = adv_filter[mbinds]
@@ -357,9 +390,9 @@ class PPOAgent(BaseAgent):
         #     self.lr *= (1 + self.alpha)
         pi_loss_ctl_mean = np.mean(pi_loss_ctl_buf)
         
-        if pi_loss_ctl_mean > 1.5 * self.target_j:
+        if pi_loss_ctl_all > 1.5 * self.target_j:
             self.alpha *= 2
-        elif pi_loss_ctl_mean < self.target_j / 1.5:
+        elif pi_loss_ctl_all < self.target_j / 1.5:
             self.alpha /= 2
         self.alpha = np.clip(self.alpha, 2**(-10), 64)
 
