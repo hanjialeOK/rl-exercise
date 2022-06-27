@@ -62,8 +62,8 @@ class PPOAgent(BaseAgent):
                  clip_ratio=0.4, lr=3e-4, train_iters=10, target_kl=0.01,
                  ent_coef=0.0, vf_coef=0.5, max_grad_norm=0.5, target_j=1e-3,
                  horizon=2048, nminibatches=32, gamma=0.99, lam=0.95,
-                 alpha=1, grad_clip=True, vf_clip=True, fixed_lr=False,
-                 nlatest=64, uniform=False):
+                 alpha=1, grad_clip=False, vf_clip=True, fixed_lr=False,
+                 nlatest=64, uniform=False, gedisc=False):
         self.sess = sess
         self.summary_writer = summary_writer
         self.obs_dim = obs_dim
@@ -82,6 +82,7 @@ class PPOAgent(BaseAgent):
         self.grad_clip = grad_clip
         self.vf_clip = vf_clip
         self.fixed_lr = fixed_lr
+        self.gedisc = gedisc
 
         self.buffer = Buffer.DISCBuffer(
             obs_dim, act_dim, size=horizon, nlatest=nlatest, gamma=gamma, lam=lam, uniform=uniform)
@@ -127,7 +128,6 @@ class PPOAgent(BaseAgent):
             name='pik/logstd_pik', shape=(1, self.act_dim[0]),
             initializer=tf.zeros_initializer)
         std = tf.exp(logstd)
-        std_pik = tf.exp(logstd_pik)
 
         # Interative with env
         mu1 = self.actor(ob1_ph)
@@ -149,6 +149,7 @@ class PPOAgent(BaseAgent):
         meanent = tf.reduce_mean(entropy)
 
         mu_pik = tf.stop_gradient(self.actor_pik(obs_ph))
+        std_pik = tf.stop_gradient(tf.exp(logstd_pik))
         dist_pik = tfp.distributions.Normal(loc=mu_pik, scale=std_pik)
         kl = tf.reduce_sum(dist.kl_divergence(dist_pik), axis=1)
         meankl = tf.reduce_mean(kl)
@@ -159,16 +160,19 @@ class PPOAgent(BaseAgent):
         # PPO objectives
         # pi(a|s) / pi_old(a|s), should be one at the first iteration
         ratio_disc = tf.exp(logp_a_disc - logp_disc_old_ph)
-        ratio_disc2 = tf.clip_by_value(
-            ratio_disc, 1.0 - self.clip_ratio, 1.0 + self.clip_ratio)
-        # ratio = tf.reduce_prod(ratio_disc, axis=1)
-        # ratio2 = tf.reduce_prod(ratio_disc2, axis=1)
-        min_ratio = tf.where(
+        ratio_disc_pik = tf.exp(logp_a_disc - logp_disc_pik_ph)
+        center = ratio_disc_pik if self.gedisc else 1.0
+        ratio_disc_clip = tf.clip_by_value(
+            ratio_disc, center - self.clip_ratio, center + self.clip_ratio)
+        ratio_disc_min = tf.where(
             adv_ph > 0,
-            tf.minimum(ratio_disc, ratio_disc2),
-            tf.maximum(ratio_disc, ratio_disc2))
+            tf.minimum(ratio_disc, ratio_disc_clip),
+            tf.maximum(ratio_disc, ratio_disc_clip))
         ratio = tf.reduce_prod(ratio_disc, axis=1)
-        ratio2 = tf.reduce_prod(min_ratio, axis=1)
+        ratio_min = tf.reduce_prod(ratio_disc_min, axis=1)
+
+        # sign_disc = tf.ones_like(ratio_disc) * tf.expand_dims(tf.sign(adv_ph), 1)
+        # r = tf.reduce_prod(sign_disc * tf.minimum(ratio_disc * sign_disc, ratio_disc_clip * sign_disc), axis=1)
 
         # pi_loss1 = -adv_ph * ratio
         # pi_loss2 = -adv_ph * tf.clip_by_value(
@@ -178,8 +182,11 @@ class PPOAgent(BaseAgent):
         logp_a = tf.reduce_sum(logp_a_disc, axis=1)
         approxkl = 0.5 * tf.reduce_mean(tf.square(logp_pik - logp_a))
         pi_loss_ctl = 0.5 * tf.reduce_mean(tf.square(logp_pik - logp_a)*on_policy_ph)
+        # pi_loss_ctl = tf.reduce_mean(kl*on_policy_ph)
 
-        pi_loss = -tf.reduce_mean(adv_ph * ratio2) + alpha_ph * pi_loss_ctl
+        pi_loss = -tf.reduce_mean(adv_ph * ratio_min / tf.stop_gradient(tf.reduce_mean(ratio_min)))
+        # pi_loss = -tf.reduce_mean(adv_ph * r / tf.stop_gradient(tf.reduce_mean(r)))
+        pi_loss += alpha_ph * pi_loss_ctl
 
         if self.vf_clip:
             valclipped = val_ph + \
@@ -212,7 +219,7 @@ class PPOAgent(BaseAgent):
         if self.grad_clip:
             grads, _grad_norm = tf.clip_by_global_norm(
                 grads, self.max_grad_norm)
-            gradclipped = _grad_norm > self.max_grad_norm
+        gradclipped = _grad_norm > self.max_grad_norm if self.grad_clip else tf.zeros(())
         grads_and_vars = list(zip(grads, vars))
 
         train_op = optimizer.apply_gradients(grads_and_vars)
@@ -342,6 +349,7 @@ class PPOAgent(BaseAgent):
                 # [obs, actions, advs, rets, logprobs, values, rhos] = slices
                 advs = adv_filter[mbinds]
                 rhos = rho_filter[mbinds]
+                rhos = np.minimum(rhos, 1.0)
                 weights = weights_filter[mbinds]
                 advs_mean = np.mean(advs * rhos * weights) / np.mean(rhos * weights)
                 advs_std = np.std(advs * rhos * weights)
@@ -389,10 +397,10 @@ class PPOAgent(BaseAgent):
         # elif tv_all < self.thresh * 0.5 * self.clip_ratio:
         #     self.lr *= (1 + self.alpha)
         pi_loss_ctl_mean = np.mean(pi_loss_ctl_buf)
-        
-        if pi_loss_ctl_all > 1.5 * self.target_j:
+
+        if pi_loss_ctl_mean > self.target_j * 1.5:
             self.alpha *= 2
-        elif pi_loss_ctl_all < self.target_j / 1.5:
+        elif pi_loss_ctl_mean < self.target_j / 1.5:
             self.alpha /= 2
         self.alpha = np.clip(self.alpha, 2**(-10), 64)
 
