@@ -164,28 +164,24 @@ class PPOAgent(BaseAgent):
         center = ratio_disc_pik if self.gedisc else 1.0
         ratio_disc_clip = tf.clip_by_value(
             ratio_disc, center - self.clip_ratio, center + self.clip_ratio)
-        ratio_disc_min = tf.where(
-            adv_ph > 0,
-            tf.minimum(ratio_disc, ratio_disc_clip),
-            tf.maximum(ratio_disc, ratio_disc_clip))
+        # ratio_disc_min = tf.where(
+        #     adv_ph > 0,
+        #     tf.minimum(ratio_disc, ratio_disc_clip),
+        #     tf.maximum(ratio_disc, ratio_disc_clip))
         ratio = tf.reduce_prod(ratio_disc, axis=1)
-        ratio_min = tf.reduce_prod(ratio_disc_min, axis=1)
+        # ratio_min = tf.reduce_prod(ratio_disc_min, axis=1)
 
-        # sign_disc = tf.ones_like(ratio_disc) * tf.expand_dims(tf.sign(adv_ph), 1)
-        # r = tf.reduce_prod(sign_disc * tf.minimum(ratio_disc * sign_disc, ratio_disc_clip * sign_disc), axis=1)
+        sign = tf.expand_dims(tf.sign(adv_ph), axis=1)
+        ratio_min = tf.reduce_prod(sign * tf.minimum(ratio_disc * sign, ratio_disc_clip * sign), axis=1)
 
-        # pi_loss1 = -adv_ph * ratio
-        # pi_loss2 = -adv_ph * tf.clip_by_value(
-        #     ratio2, 1.0 - self.clip_ratio, 1.0 + self.clip_ratio)
-        # pi_loss = tf.reduce_mean(tf.maximum(pi_loss1, pi_loss2))
         logp_pik = tf.reduce_sum(logp_disc_pik_ph, axis=1)
         logp_a = tf.reduce_sum(logp_a_disc, axis=1)
         approxkl = 0.5 * tf.reduce_mean(tf.square(logp_pik - logp_a))
         pi_loss_ctl = 0.5 * tf.reduce_mean(tf.square(logp_pik - logp_a)*on_policy_ph)
         # pi_loss_ctl = tf.reduce_mean(kl*on_policy_ph)
 
+        # pi_loss = -tf.reduce_mean(adv_ph * ratio_min )
         pi_loss = -tf.reduce_mean(adv_ph * ratio_min / tf.stop_gradient(tf.reduce_mean(ratio_min)))
-        # pi_loss = -tf.reduce_mean(adv_ph * r / tf.stop_gradient(tf.reduce_mean(r)))
         pi_loss += alpha_ph * pi_loss_ctl
 
         if self.vf_clip:
