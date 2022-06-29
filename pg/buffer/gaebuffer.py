@@ -186,13 +186,13 @@ class GAEVBuffer:
         self.ptr = 0
         self.path_start_idx = 0
 
-        return [self.obs_buf[:self.count].copy(),
-                self.act_buf[:self.count].copy(),
-                self.adv_buf[:self.count].copy(),
-                self.ret_buf[:self.count].copy(),
-                self.logp_buf[:self.count].copy(),
-                self.val_buf[:self.count].copy(),
-                self.logp_pik_buf[:self.count].copy(),
+        return [self.obs_buf[:self.count],
+                self.act_buf[:self.count],
+                self.adv_buf[:self.count],
+                self.ret_buf[:self.count],
+                self.logp_buf[:self.count],
+                self.val_buf[:self.count],
+                self.logp_pik_buf[:self.count],
                 self.weights_all]
 
     def update(self):
@@ -339,13 +339,13 @@ class DISCBuffer:
         self.ptr = 0
         self.path_start_idx = 0
 
-        return [self.obs_buf[:self.count].copy(),
-                self.act_buf[:self.count].copy(),
-                self.adv_buf[:self.count].copy(),
-                self.ret_buf[:self.count].copy(),
-                self.logp_disc_buf[:self.count].copy(),
-                self.val_buf[:self.count].copy(),
-                self.logp_disc_pik_buf[:self.count].copy(),
+        return [self.obs_buf[:self.count],
+                self.act_buf[:self.count],
+                self.adv_buf[:self.count],
+                self.ret_buf[:self.count],
+                self.logp_disc_buf[:self.count],
+                self.val_buf[:self.count],
+                self.logp_disc_pik_buf[:self.count],
                 self.weights_all]
 
     def update(self):

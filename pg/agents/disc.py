@@ -247,13 +247,7 @@ class PPOAgent(BaseAgent):
         return sync_qt_ops
 
     def update(self, frac, log2board, step):
-        # obs_all, obs2_all, ac_all = self.buffer.get_obs()
-        # v_pik = self.sess.run(self.v, feed_dict={ self.obs_ph: obs_all })
-        # v2_pik = self.sess.run(self.v, feed_dict={ self.obs_ph: obs2_all })
-        # logp_inputs = {self.obs_ph: obs_all, self.act_ph: ac_all}
-        # logp_pik = self.sess.run(self.logp_a, feed_dict=logp_inputs)
         buf_data = self.buffer.vtrace(self.compute_v_pik, self.compute_logp_pik)
-        self.buffer.update()
         [obs_all, ac_all, adv_all, ret_all, logp_disc_old_all, v_all, logp_disc_pik_all, weights_all] = buf_data
         logp_pik_all = np.sum(logp_disc_pik_all, axis=1)
         logp_old_all = np.sum(logp_disc_old_all, axis=1)
@@ -305,11 +299,6 @@ class PPOAgent(BaseAgent):
 
         on_policy = np.zeros_like(adv_filter)
         on_policy[:self.horizon] = n_trajs_active
-        # self.count += 1
-        # with open(f'/data/hanjl/debug_data/buf_data_{self.count}.pkl', 'wb') as f:
-        #     pickle.dump(buf_data, f)
-
-        # Filter tracj if bias
 
         lr = self.lr if self.fixed_lr else np.maximum(self.lr * frac, 1e-4)
 
@@ -421,6 +410,8 @@ class PPOAgent(BaseAgent):
                     tag="loss/alpha", simple_value=self.alpha)
             ])
             self.summary_writer.add_summary(train_summary, step)
+
+        self.buffer.update()
 
         return [np.mean(pi_loss_buf), np.mean(vf_loss_buf),
                 np.mean(ent_buf), np.mean(kl_buf)]
