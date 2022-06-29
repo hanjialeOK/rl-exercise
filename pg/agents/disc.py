@@ -258,42 +258,23 @@ class PPOAgent(BaseAgent):
         n_trajs = rho_disc_all.shape[0] // self.horizon
         meanabsrho_buf = np.zeros(n_trajs)
 
-        obs_filter = []
-        ac_filter = []
-        adv_filter = []
-        ret_filter = []
-        logp_disc_old_filter = []
-        v_filter = []
-        logp_disc_pik_filter = []
-        weights_filter = []
-        rho_filter = []
-
-        self.sess.run(self.sync_op)
-
+        filter_inds = np.array([], dtype=np.int64)
         for s in range(n_trajs):
             start = s*self.horizon
             end = (s+1)*self.horizon
             meanabsrho_buf[s] = np.mean(absrho_all[start:end])
             if meanabsrho_buf[s] <= 1 + 0.1:
-                obs_filter.append(obs_all[start:end])
-                ac_filter.append(ac_all[start:end])
-                adv_filter.append(adv_all[start:end])
-                ret_filter.append(ret_all[start:end])
-                logp_disc_old_filter.append(logp_disc_old_all[start:end])
-                v_filter.append(v_all[start:end])
-                logp_disc_pik_filter.append(logp_disc_pik_all[start:end])
-                weights_filter.append(weights_all[start:end])
-                rho_filter.append(rho_all[start:end])
+                filter_inds = np.concatenate([filter_inds, np.arange(start, end)])
 
-        obs_filter = np.concatenate(obs_filter, axis=0)
-        ac_filter = np.concatenate(ac_filter, axis=0)
-        adv_filter = np.concatenate(adv_filter, axis=0)
-        ret_filter = np.concatenate(ret_filter, axis=0)
-        logp_disc_old_filter = np.concatenate(logp_disc_old_filter, axis=0)
-        v_filter = np.concatenate(v_filter, axis=0)
-        logp_disc_pik_filter = np.concatenate(logp_disc_pik_filter, axis=0)
-        weights_filter = np.concatenate(weights_filter, axis=0)
-        rho_filter = np.concatenate(rho_filter, axis=0)
+        obs_filter = obs_all[filter_inds]
+        ac_filter = ac_all[filter_inds]
+        adv_filter = adv_all[filter_inds]
+        ret_filter = ret_all[filter_inds]
+        logp_disc_old_filter = logp_disc_old_all[filter_inds]
+        v_filter = v_all[filter_inds]
+        logp_disc_pik_filter = logp_disc_pik_all[filter_inds]
+        weights_filter = weights_all[filter_inds]
+        rho_filter = rho_all[filter_inds]
 
         n_trajs_active = obs_filter.shape[0] // self.horizon
 
@@ -310,6 +291,8 @@ class PPOAgent(BaseAgent):
         ratio_buf = []
         ratioclipfrac_buf = []
         gradclipped_buf = []
+
+        self.sess.run(self.sync_op)
 
         length = obs_filter.shape[0]
         minibatch = length // self.nminibatches
