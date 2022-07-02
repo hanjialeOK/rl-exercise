@@ -58,7 +58,7 @@ class CriticMLP(tf.keras.Model):
 
 
 class PPOAgent(BaseAgent):
-    def __init__(self, sess, summary_writer, obs_dim, act_dim,
+    def __init__(self, sess, summary_writer, env, obs_dim, act_dim,
                  clip_ratio=0.4, lr=3e-4, train_iters=10, target_kl=0.01,
                  ent_coef=0.0, vf_coef=0.5, max_grad_norm=0.5, target_j=1e-3,
                  horizon=2048, nminibatches=32, gamma=0.99, lam=0.95,
@@ -85,7 +85,9 @@ class PPOAgent(BaseAgent):
         self.gedisc = gedisc
 
         self.buffer = Buffer.DISCBuffer(
-            obs_dim, act_dim, size=horizon, nlatest=nlatest, gamma=gamma, lam=lam, uniform=uniform)
+            obs_dim, act_dim, size=horizon, nlatest=nlatest, gamma=gamma, lam=lam, uniform=uniform,
+            obfilt=env._obfilt, rewfilt=env._rewfilt,
+            compute_v_pik=self.compute_v_pik, compute_logp_pik=self.compute_logp_pik)
         self._build_network()
         self._build_train_op()
         self.saver = self._build_saver()
@@ -171,13 +173,14 @@ class PPOAgent(BaseAgent):
         ratio = tf.reduce_prod(ratio_disc, axis=1)
         # ratio_min = tf.reduce_prod(ratio_disc_min, axis=1)
 
-        sign = tf.expand_dims(tf.sign(adv_ph), axis=1)
-        ratio_min = tf.reduce_prod(sign * tf.minimum(ratio_disc * sign, ratio_disc_clip * sign), axis=1)
+        sgn = tf.expand_dims(tf.sign(adv_ph), axis=1)
+        ratio_min = tf.reduce_prod(sgn * tf.minimum(ratio_disc * sgn, ratio_disc_clip * sgn), axis=1)
 
+        logp_old = tf.reduce_sum(logp_disc_old_ph, axis=1)
         logp_pik = tf.reduce_sum(logp_disc_pik_ph, axis=1)
         logp_a = tf.reduce_sum(logp_a_disc, axis=1)
         approxkl = 0.5 * tf.reduce_mean(tf.square(logp_pik - logp_a))
-        pi_loss_ctl = 0.5 * tf.reduce_mean(tf.square(logp_pik - logp_a)*on_policy_ph)
+        pi_loss_ctl = 0.5 * tf.reduce_mean(tf.square(logp_old - logp_a)*on_policy_ph)
         # pi_loss_ctl = tf.reduce_mean(kl*on_policy_ph)
 
         # pi_loss = -tf.reduce_mean(adv_ph * ratio_min )
@@ -247,8 +250,8 @@ class PPOAgent(BaseAgent):
         return sync_qt_ops
 
     def update(self, frac, log2board, step):
-        buf_data = self.buffer.vtrace(self.compute_v_pik, self.compute_logp_pik)
-        [obs_all, ac_all, adv_all, ret_all, logp_disc_old_all, v_all, logp_disc_pik_all, weights_all] = buf_data
+        buf_data = self.buffer.vtrace()
+        [obs_all, ac_all, adv_all, ret_all, logp_disc_old_all, v_all, logp_disc_pik_all] = buf_data
         logp_pik_all = np.sum(logp_disc_pik_all, axis=1)
         logp_old_all = np.sum(logp_disc_old_all, axis=1)
         rho_all = np.exp(logp_pik_all - logp_old_all)
@@ -273,7 +276,6 @@ class PPOAgent(BaseAgent):
         logp_disc_old_filter = logp_disc_old_all[filter_inds]
         v_filter = v_all[filter_inds]
         logp_disc_pik_filter = logp_disc_pik_all[filter_inds]
-        weights_filter = weights_all[filter_inds]
         rho_filter = rho_all[filter_inds]
 
         n_trajs_active = obs_filter.shape[0] // self.horizon
@@ -318,9 +320,8 @@ class PPOAgent(BaseAgent):
                 advs = adv_filter[mbinds]
                 rhos = rho_filter[mbinds]
                 rhos = np.minimum(rhos, 1.0)
-                weights = weights_filter[mbinds]
-                advs_mean = np.mean(advs * rhos * weights) / np.mean(rhos * weights)
-                advs_std = np.std(advs * rhos * weights)
+                advs_mean = np.mean(advs * rhos) / np.mean(rhos)
+                advs_std = np.std(advs * rhos)
                 advs_norm = (advs - advs_mean) / (advs_std + 1e-8)
                 inputs = {
                     self.obs_ph: obs_filter[mbinds],
@@ -411,9 +412,9 @@ class PPOAgent(BaseAgent):
             self.v1, feed_dict={self.ob1_ph: obs.reshape(1, -1)})
         return v[0]
 
-    def store_transition(self, obs, action, reward, done):
+    def store_transition(self, obs, ac, reward, done, raw_obs, raw_rew):
         [v, logp_pi] = self.extra_info
-        self.buffer.store(obs, action, reward, done,
+        self.buffer.store(obs, ac, reward, done, raw_obs, raw_rew,
                           v[0], logp_pi[0])
 
     def compute_v_pik(self, obs):
