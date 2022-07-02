@@ -228,7 +228,7 @@ class DISCBuffer:
     Openai spinningup implementation
     '''
 
-    def __init__(self, obs_shape, ac_shape, size, nlatest=1, gamma=0.99, lam=0.95, uniform=False,
+    def __init__(self, obs_shape, ac_shape, size, nlatest=1, gamma=0.99, lam=0.95,
                  obfilt=None, rewfilt=None, compute_v_pik=None, compute_logp_pik=None):
         max_size = size * nlatest
         self.obs_buf = np.zeros((max_size, ) + obs_shape, dtype=np.float64)
@@ -256,7 +256,6 @@ class DISCBuffer:
         self.ptr = 0
         self.path_start_idx = 0
         self.count = 0
-        self.uniform = uniform
         self.obfilt = obfilt
         self.rewfilt = rewfilt
         self.compute_v_pik = compute_v_pik

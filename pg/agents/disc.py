@@ -63,7 +63,7 @@ class PPOAgent(BaseAgent):
                  ent_coef=0.0, vf_coef=0.5, max_grad_norm=0.5, target_j=1e-3,
                  horizon=2048, nminibatches=32, gamma=0.99, lam=0.95,
                  alpha=1, grad_clip=False, vf_clip=True, fixed_lr=False,
-                 nlatest=64, uniform=False, gedisc=False):
+                 nlatest=64, gedisc=False):
         self.sess = sess
         self.summary_writer = summary_writer
         self.obs_dim = obs_dim
@@ -85,7 +85,7 @@ class PPOAgent(BaseAgent):
         self.gedisc = gedisc
 
         self.buffer = Buffer.DISCBuffer(
-            obs_dim, act_dim, size=horizon, nlatest=nlatest, gamma=gamma, lam=lam, uniform=uniform,
+            obs_dim, act_dim, size=horizon, nlatest=nlatest, gamma=gamma, lam=lam,
             obfilt=env._obfilt, rewfilt=env._rewfilt,
             compute_v_pik=self.compute_v_pik, compute_logp_pik=self.compute_logp_pik)
         self._build_network()
