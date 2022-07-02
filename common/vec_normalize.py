@@ -15,14 +15,14 @@ class VecNormalize():
         self.epsilon = epsilon
         self.ac_low = self.env.action_space.low[0]
         self.ac_high = self.env.action_space.high[0]
-        self.raw_obs = np.zeros(self.observation_space.shape)
+        self.raw_obs = None
         self.raw_rew = 0.
 
     def step(self, ac):
         ac = np.nan_to_num(ac)
         ac = np.clip(ac, self.ac_low, self.ac_high)
         obs, rew, done, info = self.env.step(ac)
-        self.raw_obs[:] = self.obs
+        self.raw_obs = obs.copy()
         self.raw_rew = rew
         obs = self._obfilt(obs)
         rew = self._rewfilt(rew)
@@ -45,7 +45,7 @@ class VecNormalize():
 
     def reset(self):
         obs = self.env.reset()
-        self.raw_obs[:] = obs
+        self.raw_obs = obs.copy()
         self.raw_rew = 0.
         return self._obfilt(obs)
 
@@ -107,14 +107,14 @@ class VecNormalize2():
         self.ac_high = self.env.action_space.high[0]
         self.gamma = 0.99
         self.ret = 0.
-        self.raw_obs = np.zeros(self.observation_space.shape)
+        self.raw_obs = None
         self.raw_rew = 0.
 
     def step(self, ac):
         ac = np.nan_to_num(ac)
         ac = np.clip(ac, self.ac_low, self.ac_high)
         obs, rew, done, info = self.env.step(ac)
-        self.raw_obs[:] = obs
+        self.raw_obs = obs.copy()
         self.raw_rew = rew
 
         self.ob_rms.update(np.reshape(obs, (1, -1)))
@@ -146,7 +146,7 @@ class VecNormalize2():
     def reset(self):
         self.ret = 0.
         obs = self.env.reset()
-        self.raw_obs[:] = obs
+        self.raw_obs = obs.copy()
         self.raw_rew = 0.
         return self._obfilt(obs)
 
