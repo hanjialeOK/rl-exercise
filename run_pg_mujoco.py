@@ -8,7 +8,8 @@ import collections
 import pickle
 
 # from common.cmd_util import make_vec_env
-from common.vec_normalize import VecNormalize
+# from common.vec_env.vec_normalize import VecNormalize
+from common.vec_normalize import VecNormalize2
 # from baselines.common.cmd_util import make_vec_env
 # from baselines.common.vec_env.vec_normalize import VecNormalize
 
@@ -60,13 +61,15 @@ def main():
                         default='Walker2d-v2')
     parser.add_argument('--alg', type=str, default='PPO',
                         choices=['A2C', 'VPG', 'TRPO', 'TRPO2',
-                                 'PPO', 'PPO2', 'PPOV', 'DISC', 'DISC2', 'DISC3', 'GePPO'],
+                                 'PPO', 'PPO2', 'DISC', 'DISC2', 'GePPO', 'GeDISC'],
                         help='Experiment name')
     parser.add_argument('--allow_eval', action='store_true',
                         help='Whether to eval agent')
     parser.add_argument('--save_model', action='store_true',
                         help='Whether to save model')
     parser.add_argument('--total_steps', type=float, default=1e6,
+                        help='Total steps trained')
+    parser.add_argument('--uniform', action='store_true',
                         help='Total steps trained')
     args = parser.parse_args()
 
@@ -109,13 +112,16 @@ def main():
     env.seed(seed)
     env_eval = gym.make(args.env)
     env_eval.seed(seed)
-    obs_dim = env.observation_space.shape
-    act_dim = env.action_space.shape
+    obs_shape = env.observation_space.shape
+    ac_shape = env.action_space.shape
     ac_max = float(env.action_space.high[0])
     ac_min = float(env.action_space.low[0])
 
     # Normalized rew and obs
-    env = VecNormalize(env)
+    env = VecNormalize2(env)
+    # baselines
+    # env = make_vec_env(args.env, num_env=1, seed=seed)
+    # env = VecNormalize(env)
 
     # Tensorboard
     summary_writer = tf.compat.v1.summary.FileWriter(summary_dir)
@@ -140,70 +146,70 @@ def main():
     # Hyperparameters in http://arxiv.org/abs/1709.06560
     if args.alg == 'A2C':
         import pg.agents.a2c as A2C
-        agent = A2C.A2CAgent(sess, obs_dim, act_dim, horizon=5,
+        agent = A2C.A2CAgent(sess, obs_shape, ac_shape, horizon=5,
                              gamma=0.995, lam=0.97)
         # 1M // 5 // 488 = 409
         log_interval = total_steps // agent.horizon // 488
     elif args.alg == 'VPG':
         import pg.agents.vpg as VPG
-        agent = VPG.VPGAgent(sess, obs_dim, act_dim, horizon=1024,
+        agent = VPG.VPGAgent(sess, obs_shape, ac_shape, horizon=1024,
                              gamma=0.995, lam=0.97)
         # 1M // 2048 / 488 = 1
         log_interval = 2
     elif args.alg == 'TRPO':
         import pg.agents.trpo as TRPO
-        agent = TRPO.TRPOAgent(sess, obs_dim, act_dim, horizon=1024,
+        agent = TRPO.TRPOAgent(sess, obs_shape, ac_shape, horizon=1024,
                                gamma=0.995, lam=0.97, cg_iters=10)
         # 1M // 1024 / 488 = 1
         log_interval = 2
     elif args.alg == 'TRPO2':
         import pg.agents.trpo2 as TRPO2
-        agent = TRPO2.TRPOAgent(sess, obs_dim, act_dim, horizon=1024,
+        agent = TRPO2.TRPOAgent(sess, obs_shape, ac_shape, horizon=1024,
                                 gamma=0.995, lam=0.97, cg_iters=10)
         # 1M // 1024 / 488 = 1
         log_interval = 2
     elif args.alg == 'PPO':
         import pg.agents.ppo as PPO
-        agent = PPO.PPOAgent(sess, obs_dim, act_dim, horizon=2048,
+        agent = PPO.PPOAgent(sess, obs_shape, ac_shape, horizon=2048,
                              gamma=0.995, lam=0.97, fixed_lr=True)
         # 1M // 2048 / 488 = 1
         log_interval = 1
     elif args.alg == 'PPOV':
         raise NotImplementedError
         import pg.agents.ppo2_distv as PPOV
-        agent = PPOV.PPOAgent(sess, obs_dim, act_dim, horizon=2048)
+        agent = PPOV.PPOAgent(sess, obs_shape, ac_shape, horizon=2048)
         # 1M // 2048 / 488 = 1
         log_interval = 1
     elif args.alg == 'PPO2':
         import pg.agents.ppo2 as PPO2
-        agent = PPO2.PPOAgent(sess, summary_writer, obs_dim, act_dim, horizon=2048,
-                              gamma=0.995, lam=0.97, fixed_lr=False)
+        agent = PPO2.PPOAgent(sess, summary_writer, obs_shape, ac_shape, horizon=2048,
+                              gamma=0.99, lam=0.95, fixed_lr=False)
         # 1M // 2048 / 488 = 1
         log_interval = 1
     elif args.alg == 'DISC':
         import pg.agents.disc as DISC
-        agent = DISC.PPOAgent(sess, summary_writer, obs_dim, act_dim, horizon=2048,
-                              gamma=0.995, lam=0.97, fixed_lr=False)
+        agent = DISC.PPOAgent(sess, summary_writer, env, obs_shape, ac_shape, horizon=2048,
+                              gamma=0.99, lam=0.95, fixed_lr=False, uniform=True)
         # 1M // 2048 / 488 = 1
         log_interval = 1
     elif args.alg == 'DISC2':
         import pg.agents.disc2 as DISC2
-        agent = DISC2.PPOAgent(sess, summary_writer, obs_dim, act_dim, horizon=2048,
+        agent = DISC2.PPOAgent(sess, summary_writer, obs_shape, ac_shape, horizon=2048,
                                gamma=0.995, lam=0.97, fixed_lr=False)
         # 1M // 2048 / 488 = 1
         log_interval = 1
-    elif args.alg == 'DISC3':
-        import pg.agents.disc3 as DISC3
-        agent = DISC3.PPOAgent(sess, summary_writer, obs_dim, act_dim, horizon=2048,
-                               gamma=0.995, lam=0.97, fixed_lr=False)
+    elif args.alg == 'GeDISC':
+        import pg.agents.gedisc as GeDISC
+        agent = GeDISC.PPOAgent(sess, summary_writer, obs_shape, ac_shape, horizon=2048,
+                                gamma=0.99, lam=0.95, fixed_lr=False, uniform=True)
         # 1M // 2048 / 488 = 1
         log_interval = 1
     elif args.alg == 'GePPO':
         import pg.agents.geppo as GePPO
-        agent = GePPO.PPOAgent(sess, summary_writer, obs_dim, act_dim, horizon=1024,
-                               gamma=0.995, lam=0.97, fixed_lr=False)
+        agent = GePPO.PPOAgent(sess, summary_writer, obs_shape, ac_shape, horizon=2048,
+                               gamma=0.99, lam=0.95, fixed_lr=False, uniform=True)
         # 1M // 2048 / 488 = 1
-        log_interval = 2
+        log_interval = 1
     else:
         raise ValueError('Unknown agent: {}'.format(args.alg))
 
@@ -239,6 +245,7 @@ def main():
     # Start
     start_time = time.time()
     obs = env.reset()
+    raw_obs, _ = env.get_raw()
     # max_ep_ret = 0
     max_ep_len = env.spec.max_episode_steps
     ep_ret_buf = collections.deque(maxlen=100)
@@ -255,23 +262,25 @@ def main():
             ac = agent.select_action(obs)
 
             next_obs, reward, done, info = env.step(ac)
-            raw_obs, raw_rew = env.get_raw()
+            next_raw_obs, raw_rew = env.get_raw()
             ep_len += 1
             ep_ret += raw_rew
 
-            done = done if ep_len < max_ep_len else False
-            agent.store_transition(obs, ac, reward, done)
+            # done = done if ep_len < max_ep_len else False
+            agent.store_transition(obs, ac, reward, done, raw_obs, raw_rew)
 
             obs = next_obs
+            raw_obs = next_raw_obs
 
             terminal = done or ep_len == max_ep_len
             if terminal or t == horizon:
                 last_val = 0. if done else agent.compute_v(next_obs)
-                agent.buffer.finish_path(next_obs, last_val)
+                agent.buffer.finish_path(next_obs, next_raw_obs, last_val)
                 if terminal:
                     ep_ret_buf.append(ep_ret)
                     ep_len_buf.append(ep_len)
                 obs = env.reset()
+                raw_obs, _ = env.get_raw()
                 ep_len = 0
                 ep_ret = 0.
 
