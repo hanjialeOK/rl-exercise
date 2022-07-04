@@ -202,7 +202,7 @@ def main():
         log_interval = 1
     elif args.alg == 'GeDISC':
         import pg.agents.gedisc as GeDISC
-        agent = GeDISC.PPOAgent(sess, summary_writer, obs_shape, ac_shape, horizon=2048,
+        agent = GeDISC.PPOAgent(sess, summary_writer, env, obs_shape, ac_shape, horizon=2048,
                                 gamma=0.99, lam=0.95, fixed_lr=False, uniform=True)
         # 1M // 2048 / 488 = 1
         log_interval = 1

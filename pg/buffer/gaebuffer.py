@@ -85,13 +85,17 @@ class GAEVBuffer:
     Openai spinningup implementation
     '''
 
-    def __init__(self, obs_shape, ac_shape, size, nlatest=1, gamma=0.99, lam=0.95, uniform=False):
+    def __init__(self, obs_shape, ac_shape, size, nlatest=1, gamma=0.99, lam=0.95,
+                 obfilt=None, rewfilt=None, compute_v_pik=None, compute_logp_pik=None):
         max_size = size * nlatest
         self.obs_buf = np.zeros((max_size, ) + obs_shape, dtype=np.float64)
         self.obs2_buf = np.zeros((max_size, ) + obs_shape, dtype=np.float64)
+        self.raw_obs_buf = np.zeros((max_size, ) + obs_shape, dtype=np.float64)
+        self.raw_obs2_buf = np.zeros((max_size, ) + obs_shape, dtype=np.float64)
         self.ac_buf = np.zeros((max_size, ) + ac_shape, dtype=np.float32)
         self.adv_buf = np.zeros((max_size, ), dtype=np.float32)
         self.rew_buf = np.zeros((max_size, ), dtype=np.float32)
+        self.raw_rew_buf = np.zeros((max_size, ), dtype=np.float32)
         self.done_buf = np.zeros((max_size, ), dtype=np.float32)
         self.trun_buf = np.zeros((max_size, ), dtype=np.float32)
         self.ret_buf = np.zeros((max_size, ), dtype=np.float32)
@@ -99,7 +103,6 @@ class GAEVBuffer:
         self.next_val_buf = np.zeros((max_size, ), dtype=np.float32)
         self.logp_buf = np.zeros((max_size, ), dtype=np.float32)
         self.logp_pik_buf = np.zeros((max_size, ), dtype=np.float32)
-        self.weights = np.array([0.4, 0.3, 0.2, 0.1])
         self.obs_shape = obs_shape
         self.ac_shape = ac_shape
         self.max_size = max_size
@@ -107,25 +110,31 @@ class GAEVBuffer:
         self.nlatest = nlatest
         self.gamma = gamma
         self.lam = lam
-        self.ptr = 0
-        self.path_start_idx = 0
+        self.ptr = self.max_size - self.size
+        self.path_start_idx = self.max_size - self.size
         self.count = 0
-        self.uniform = uniform
+        self.obfilt = obfilt
+        self.rewfilt = rewfilt
+        self.compute_v_pik = compute_v_pik
+        self.compute_logp_pik = compute_logp_pik
 
-    def store(self, obs, act, rew, done, val, logp):
+    def store(self, obs, ac, rew, done, raw_obs, raw_rew, val, logp):
         assert self.ptr < self.max_size
         assert obs.shape == self.obs_shape
-        assert act.shape == self.ac_shape
+        assert raw_obs.shape == self.obs_shape
+        assert ac.shape == self.ac_shape
         self.obs_buf[self.ptr] = obs
-        self.ac_buf[self.ptr] = act
+        self.ac_buf[self.ptr] = ac
         self.rew_buf[self.ptr] = rew
         self.done_buf[self.ptr] = done
+        self.raw_obs_buf[self.ptr] = raw_obs
+        self.raw_rew_buf[self.ptr] = raw_rew
         self.val_buf[self.ptr] = val
         self.logp_buf[self.ptr] = logp
         self.ptr += 1
         self.count = min(self.count+1, self.max_size)
 
-    def finish_path(self, last_ob=None, last_val=None):
+    def finish_path(self, last_ob=None, last_raw_ob=None, last_val=None):
         start = self.path_start_idx
         self.trun_buf[start:self.ptr-1] = 0
         self.trun_buf[self.ptr-1] = 1
@@ -133,13 +142,16 @@ class GAEVBuffer:
         self.next_val_buf[self.ptr-1] = last_val
         self.obs2_buf[start:self.ptr-1] = self.obs_buf[start+1:self.ptr]
         self.obs2_buf[self.ptr-1] = last_ob
+        self.raw_obs2_buf[start:self.ptr-1] = self.raw_obs_buf[start+1:self.ptr]
+        self.raw_obs2_buf[self.ptr-1] = last_raw_ob
 
         # GAE-Lambda advantage calculation
         lastgaelam = 0.0
         for t in reversed(range(self.path_start_idx, self.ptr)):
+            nondone = 1.0 - self.done_buf[t]
             nontruncated = 1.0 - self.trun_buf[t]
             delta = self.rew_buf[t] + \
-                self.gamma * self.next_val_buf[t] - self.val_buf[t]
+                self.gamma * nondone * self.next_val_buf[t] - self.val_buf[t]
             self.adv_buf[t] = \
                 delta + self.gamma * self.lam * nontruncated * lastgaelam
             lastgaelam = self.adv_buf[t]
@@ -149,77 +161,82 @@ class GAEVBuffer:
 
         self.path_start_idx = self.ptr
 
-    def vtrace(self, compute_v_pik, compute_logp_pik):
-        assert self.ptr == self.size
+    def vtrace(self):
+        assert self.ptr == self.max_size
         assert self.count % self.size == 0 and self.count > 0
 
-        self.val_buf[:self.count] = compute_v_pik(self.obs_buf[:self.count])
-        self.next_val_buf[:self.count] = compute_v_pik(self.obs2_buf[:self.count])
-        self.logp_pik_buf[:self.count] = compute_logp_pik(
-            self.obs_buf[:self.count], self.ac_buf[:self.count])
+        self.obs_buf[:] = self.obfilt(self.raw_obs_buf)
+        self.obs2_buf[:] = self.obfilt(self.raw_obs2_buf)
+        self.rew_buf[:] = self.rewfilt(self.raw_rew_buf)
 
-        rho = np.exp(self.logp_pik_buf[:self.count] - self.logp_buf[:self.count])
+        self.val_buf[:] = self.compute_v_pik(self.obs_buf)
+        self.next_val_buf[:] = self.compute_v_pik(self.obs2_buf)
+        self.logp_pik_buf[:] = self.compute_logp_pik(self.obs_buf, self.ac_buf)
+
+        rho = np.exp(self.logp_pik_buf - self.logp_buf)
         # Reduce bias here!
         rho = np.minimum(rho, 1.0)
 
         lastgaelam = 0.0
-        for t in reversed(range(self.count)):
+        for t in reversed(range(self.max_size - self.count, self.max_size)):
             nondone = 1.0 - self.done_buf[t]
             nontruncated = 1.0 - self.trun_buf[t]
             delta = self.rew_buf[t] + \
                 self.gamma * nondone * self.next_val_buf[t] - self.val_buf[t]
             self.adv_buf[t] = delta + \
-                self.gamma * self.lam * nontruncated * lastgaelam
+                self.gamma * self.lam * nondone * lastgaelam
             lastgaelam = rho[t] * self.adv_buf[t]
-        self.ret_buf[:self.count] = self.adv_buf[:self.count] * rho + \
-            self.val_buf[:self.count]
+        self.ret_buf[:] = self.adv_buf * rho + self.val_buf
 
-        M_active = self.count // self.size
-        weights_active = self.weights[:M_active]
-        weights_active = weights_active / np.sum(weights_active)
-        weights_active *= M_active
-        self.weights_all = np.repeat(weights_active, self.size)
-        if self.uniform:
-            self.weights_all = np.ones(self.count)
+        # M_active = self.count // self.size
+        # weights_active = self.weights[:M_active]
+        # weights_active = weights_active / np.sum(weights_active)
+        # weights_active *= M_active
+        # self.weights_all = np.repeat(weights_active, self.size)
+        # if self.uniform:
+        self.weights_all = np.ones(self.count)
 
         # Reset ptr
-        self.ptr = 0
-        self.path_start_idx = 0
+        self.ptr = self.max_size - self.size
+        self.path_start_idx = self.max_size - self.size
 
-        return [self.obs_buf[:self.count],
-                self.ac_buf[:self.count],
-                self.adv_buf[:self.count],
-                self.ret_buf[:self.count],
-                self.logp_buf[:self.count],
-                self.val_buf[:self.count],
-                self.logp_pik_buf[:self.count],
+        return [self.obs_buf[-self.count:],
+                self.ac_buf[-self.count:],
+                self.adv_buf[-self.count:],
+                self.ret_buf[-self.count:],
+                self.logp_buf[-self.count:],
+                self.val_buf[-self.count:],
+                self.logp_pik_buf[-self.count:],
                 self.weights_all]
 
     def update(self):
-        index1 = 1 * self.size
-        index2 = (self.nlatest-1) * self.size
-        self.obs_buf[index1:] = self.obs_buf[:index2]
-        self.obs2_buf[index1:] = self.obs2_buf[:index2]
-        self.ac_buf[index1:] = self.ac_buf[:index2]
-        self.adv_buf[index1:] = self.adv_buf[:index2]
-        self.rew_buf[index1:] = self.rew_buf[:index2]
-        self.done_buf[index1:] = self.done_buf[:index2]
-        self.trun_buf[index1:] = self.trun_buf[:index2]
-        self.ret_buf[index1:] = self.ret_buf[:index2]
-        self.val_buf[index1:] = self.val_buf[:index2]
-        self.next_val_buf[index1:] = self.next_val_buf[:index2]
-        self.logp_buf[index1:] = self.logp_buf[:index2]
-        self.logp_pik_buf[index1:] = self.logp_pik_buf[:index2]
+        tail = self.max_size - self.size
+        head = self.size
+        self.obs_buf[:tail] = self.obs_buf[head:]
+        self.obs2_buf[:tail] = self.obs2_buf[head:]
+        self.ac_buf[:tail] = self.ac_buf[head:]
+        self.adv_buf[:tail] = self.adv_buf[head:]
+        self.rew_buf[:tail] = self.rew_buf[head:]
+        self.done_buf[:tail] = self.done_buf[head:]
+        self.trun_buf[:tail] = self.trun_buf[head:]
+        self.ret_buf[:tail] = self.ret_buf[head:]
+        self.val_buf[:tail] = self.val_buf[head:]
+        self.next_val_buf[:tail] = self.next_val_buf[head:]
+        self.logp_buf[:tail] = self.logp_buf[head:]
+        self.logp_pik_buf[:tail] = self.logp_pik_buf[head:]
+        self.raw_obs_buf[:tail] = self.raw_obs_buf[head:]
+        self.raw_obs2_buf[:tail] = self.raw_obs2_buf[head:]
+        self.raw_rew_buf[:tail] = self.raw_rew_buf[head:]
 
     def get_rms_data(self):
-        assert self.ptr == self.size
+        assert self.ptr == self.max_size
         # Return the latest RMS data
-        return [self.obs_buf[:self.ptr],
-                self.ret_buf[:self.ptr]]
+        return [self.obs_buf[-self.size:],
+                self.ret_buf[-self.size:]]
 
     def reset(self):
-        self.ptr = 0
-        self.path_start_idx = 0
+        self.ptr = self.max_size - self.size
+        self.path_start_idx = self.max_size - self.size
         self.count = 0
 
 
@@ -309,14 +326,13 @@ class DISCBuffer:
         assert self.ptr == self.max_size
         assert self.count % self.size == 0 and self.count > 0
 
-        self.obs_buf = self.obfilt(self.raw_obs_buf)
-        self.obs2_buf = self.obfilt(self.raw_obs2_buf)
-        self.rew_buf = self.rewfilt(self.raw_rew_buf)
+        self.obs_buf[:] = self.obfilt(self.raw_obs_buf)
+        self.obs2_buf[:] = self.obfilt(self.raw_obs2_buf)
+        self.rew_buf[:] = self.rewfilt(self.raw_rew_buf)
 
-        self.val_buf = self.compute_v_pik(self.obs_buf)
-        self.next_val_buf = self.compute_v_pik(self.obs2_buf)
-        self.logp_disc_pik_buf = \
-            self.compute_logp_pik(self.obs_buf, self.ac_buf)
+        self.val_buf[:] = self.compute_v_pik(self.obs_buf)
+        self.next_val_buf[:] = self.compute_v_pik(self.obs2_buf)
+        self.logp_disc_pik_buf[:] = self.compute_logp_pik(self.obs_buf, self.ac_buf)
 
         logp_pik = np.sum(self.logp_disc_pik_buf, axis=1)
         logp_a = np.sum(self.logp_disc_buf, axis=1)
@@ -334,7 +350,7 @@ class DISCBuffer:
             self.adv_buf[t] = delta + \
                 self.gamma * self.lam * nondone * lastgaelam
             lastgaelam = rho[t] * self.adv_buf[t]
-        self.ret_buf = self.adv_buf * rho + self.val_buf
+        self.ret_buf[:] = self.adv_buf * rho + self.val_buf
 
         # Reset ptr
         self.ptr = self.max_size - self.size
