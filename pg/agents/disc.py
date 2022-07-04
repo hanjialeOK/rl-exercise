@@ -103,8 +103,8 @@ class PPOAgent(BaseAgent):
             shape=(1, ) + self.obs_dim, dtype=tf.float32, name="ob1_ph")
         self.obs_ph = obs_ph = tf.compat.v1.placeholder(
             shape=(None, ) + self.obs_dim, dtype=tf.float32, name="obs_ph")
-        self.act_ph = act_ph = tf.compat.v1.placeholder(
-            shape=(None, ) + self.act_dim, dtype=tf.float32, name="act_ph")
+        self.ac_ph = ac_ph = tf.compat.v1.placeholder(
+            shape=(None, ) + self.act_dim, dtype=tf.float32, name="ac_ph")
         self.adv_ph = adv_ph = tf.compat.v1.placeholder(
             shape=[None, ], dtype=tf.float32, name="adv_ph")
         self.ret_ph = ret_ph = tf.compat.v1.placeholder(
@@ -145,8 +145,8 @@ class PPOAgent(BaseAgent):
         # Train batch data
         mu = self.actor(obs_ph)
         dist = tfp.distributions.Normal(loc=mu, scale=std)
-        # logp_a = tf.reduce_sum(dist.log_prob(act_ph), axis=1)
-        logp_a_disc = dist.log_prob(act_ph)
+        # logp_a = tf.reduce_sum(dist.log_prob(ac_ph), axis=1)
+        logp_a_disc = dist.log_prob(ac_ph)
         entropy = tf.reduce_sum(dist.entropy(), axis=1)
         meanent = tf.reduce_mean(entropy)
 
@@ -281,7 +281,7 @@ class PPOAgent(BaseAgent):
         n_trajs_active = obs_filter.shape[0] // self.horizon
 
         on_policy = np.zeros_like(adv_filter)
-        on_policy[:self.horizon] = n_trajs_active
+        on_policy[-self.horizon:] = n_trajs_active
 
         lr = self.lr if self.fixed_lr else np.maximum(self.lr * frac, 1e-4)
 
@@ -306,13 +306,13 @@ class PPOAgent(BaseAgent):
             # for start in range(0, length, minibatch):
             for _ in range(self.nminibatches):
                 minibatch_on = self.horizon // self.nminibatches
-                idx_on = np.random.choice(indices[:self.horizon], minibatch_on)
+                idx_on = np.random.choice(indices[-self.horizon:], minibatch_on)
                 if length > self.horizon:
                     minibatch_off = (length - self.horizon) // self.nminibatches
-                    idx_off = np.random.choice(indices[self.horizon:], minibatch_off)
+                    idx_off = np.random.choice(indices[:-self.horizon], minibatch_off)
                 else:
                     idx_off = []
-                mbinds = np.concatenate([idx_on, idx_off]).astype(np.int64)
+                mbinds = np.concatenate([idx_off, idx_on]).astype(np.int64)
                 # end = start + minibatch
                 # mbinds = indices[start:end]
                 # slices = [arr[mbinds] for arr in buf_data]
@@ -325,7 +325,7 @@ class PPOAgent(BaseAgent):
                 advs_norm = (advs - advs_mean) / (advs_std + 1e-8)
                 inputs = {
                     self.obs_ph: obs_filter[mbinds],
-                    self.act_ph: ac_filter[mbinds],
+                    self.ac_ph: ac_filter[mbinds],
                     self.adv_ph: advs_norm,
                     self.ret_ph: ret_filter[mbinds],
                     self.val_ph: v_filter[mbinds],
@@ -354,7 +354,7 @@ class PPOAgent(BaseAgent):
 
             tv_inputs = {
                 self.obs_ph: obs_filter,
-                self.act_ph: ac_filter,
+                self.ac_ph: ac_filter,
                 self.logp_disc_old_ph: logp_disc_old_filter,
                 self.logp_disc_pik_ph: logp_disc_pik_filter,
                 self.on_policy_ph: on_policy
@@ -423,6 +423,6 @@ class PPOAgent(BaseAgent):
     def compute_logp_pik(self, obs, ac):
         inputs = {
             self.obs_ph: obs,
-            self.act_ph: ac
+            self.ac_ph: ac
         }
         return self.sess.run(self.logp_a_disc, feed_dict=inputs)

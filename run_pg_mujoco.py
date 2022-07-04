@@ -71,6 +71,8 @@ def main():
                         help='Total steps trained')
     parser.add_argument('--uniform', action='store_true',
                         help='Total steps trained')
+    parser.add_argument('--seed', type=int, default=1,
+                        help='Seed for tf and np.')
     args = parser.parse_args()
 
     if not os.path.exists(args.data_dir):
@@ -279,10 +281,10 @@ def main():
                 if terminal:
                     ep_ret_buf.append(ep_ret)
                     ep_len_buf.append(ep_len)
-                obs = env.reset()
-                raw_obs, _ = env.get_raw()
-                ep_len = 0
-                ep_ret = 0.
+                    obs = env.reset()
+                    raw_obs, _ = env.get_raw()
+                    ep_len = 0
+                    ep_ret = 0.
 
         # Update rms for env
         [rms_obs, rms_ret] = agent.buffer.get_rms_data()
