@@ -163,11 +163,11 @@ class PPOAgent(BaseAgent):
 
         ratioerr = tf.where(
             adv_ph > 0,
-            tf.square(ratio - (1.0 + self.clip_ratio)),
-            tf.square(ratio - (1.0 - self.clip_ratio)))
+            0.5 * tf.square(ratio - (1.0 + self.clip_ratio)),
+            0.5 * tf.square(ratio - (1.0 - self.clip_ratio)))
         # ratioerr = tf.square(ratio - 1.0)
         ratioctl = tf.reduce_mean(tf.cast(ratioclipped, tf.float32) * ratioerr)
-        pi_loss += 0.5 * ratioctl * 0.25
+        pi_loss += ratioctl
         ratioloss64 = tf.cast(ratioclipped, tf.float32) * ratioerr
         lossratio = tf.reduce_mean(0.5 * ratioloss64 / abspiloss64)
 
@@ -288,7 +288,7 @@ class PPOAgent(BaseAgent):
             self.v1, feed_dict={self.ob1_ph: obs.reshape(1, -1)})
         return v[0]
 
-    def store_transition(self, obs, action, reward, done):
+    def store_transition(self, obs, action, reward, done, raw_obs, raw_rew):
         [v, logp_pi] = self.extra_info
-        self.buffer.store(obs, action, reward, done,
+        self.buffer.store(obs, action, reward, done, raw_obs, raw_rew,
                           v[0], logp_pi[0])

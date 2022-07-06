@@ -71,8 +71,10 @@ def main():
                         help='Total steps trained')
     parser.add_argument('--uniform', action='store_true',
                         help='Total steps trained')
-    parser.add_argument('--seed', type=int, default=1,
-                        help='Seed for tf and np.')
+    parser.add_argument('--thresh', type=float, default=0.4,
+                        help='Thresh for GeDISC')
+    parser.add_argument('--kl', type=float, default=0.001,
+                        help='KL divergence')
     args = parser.parse_args()
 
     if not os.path.exists(args.data_dir):
@@ -173,7 +175,7 @@ def main():
     elif args.alg == 'PPO':
         import pg.agents.ppo as PPO
         agent = PPO.PPOAgent(sess, obs_shape, ac_shape, horizon=2048,
-                             gamma=0.995, lam=0.97, fixed_lr=True)
+                             gamma=0.99, lam=0.95, fixed_lr=False)
         # 1M // 2048 / 488 = 1
         log_interval = 1
     elif args.alg == 'PPOV':
@@ -195,15 +197,16 @@ def main():
         # 1M // 2048 / 488 = 1
         log_interval = 1
     elif args.alg == 'DISC2':
-        import pg.agents.disc2 as DISC2
+        import pg.agents.rcppo as DISC2
         agent = DISC2.PPOAgent(sess, summary_writer, obs_shape, ac_shape, horizon=2048,
-                               gamma=0.995, lam=0.97, fixed_lr=False)
+                               gamma=0.99, lam=0.95, fixed_lr=False)
         # 1M // 2048 / 488 = 1
         log_interval = 1
     elif args.alg == 'GeDISC':
         import pg.agents.gedisc as GeDISC
         agent = GeDISC.PPOAgent(sess, summary_writer, env, obs_shape, ac_shape, horizon=2048,
-                                gamma=0.99, lam=0.95, fixed_lr=False, uniform=True)
+                                gamma=0.99, lam=0.95, fixed_lr=False, uniform=True, 
+                                thresh=args.thresh, target_kl=args.kl)
         # 1M // 2048 / 488 = 1
         log_interval = 1
     elif args.alg == 'GePPO':
