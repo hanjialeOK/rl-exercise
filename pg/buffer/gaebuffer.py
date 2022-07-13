@@ -25,19 +25,19 @@ class GAEBuffer:
         self.ptr = 0
         self.path_start_idx = 0
 
-    def store(self, obs, act, rew, done, val, logp):
+    def store(self, obs, ac, rew, done, raw_obs, raw_rew, val, logp):
         assert self.ptr < self.max_size
         assert obs.shape == self.obs_shape
-        assert act.shape == self.ac_shape
+        assert ac.shape == self.ac_shape
         self.obs_buf[self.ptr] = obs
-        self.ac_buf[self.ptr] = act
+        self.ac_buf[self.ptr] = ac
         self.rew_buf[self.ptr] = rew
         self.done_buf[self.ptr] = done
         self.val_buf[self.ptr] = val
         self.logp_buf[self.ptr] = logp
         self.ptr += 1
 
-    def finish_path(self, last_ob=None, last_val=None):
+    def finish_path(self, last_ob=None, last_raw_ob=None, last_val=None):
         start = self.path_start_idx
         self.next_val_buf[start:self.ptr-1] = self.val_buf[start+1:self.ptr]
         self.next_val_buf[self.ptr-1] = last_val
@@ -165,9 +165,11 @@ class GAEVBuffer:
         assert self.ptr == self.max_size
         assert self.count % self.size == 0 and self.count > 0
 
-        self.obs_buf[:] = self.obfilt(self.raw_obs_buf)
-        self.obs2_buf[:] = self.obfilt(self.raw_obs2_buf)
-        self.rew_buf[:] = self.rewfilt(self.raw_rew_buf)
+        if self.obfilt:
+            self.obs_buf[:] = self.obfilt(self.raw_obs_buf)
+            self.obs2_buf[:] = self.obfilt(self.raw_obs2_buf)
+        if self.rewfilt:
+            self.rew_buf[:] = self.rewfilt(self.raw_rew_buf)
 
         self.val_buf[:] = self.compute_v_pik(self.obs_buf)
         self.next_val_buf[:] = self.compute_v_pik(self.obs2_buf)
@@ -188,14 +190,6 @@ class GAEVBuffer:
             lastgaelam = rho[t] * self.adv_buf[t]
         self.ret_buf[:] = self.adv_buf * rho + self.val_buf
 
-        # M_active = self.count // self.size
-        # weights_active = self.weights[:M_active]
-        # weights_active = weights_active / np.sum(weights_active)
-        # weights_active *= M_active
-        # self.weights_all = np.repeat(weights_active, self.size)
-        # if self.uniform:
-        self.weights_all = np.ones(self.count)
-
         # Reset ptr
         self.ptr = self.max_size - self.size
         self.path_start_idx = self.max_size - self.size
@@ -206,8 +200,7 @@ class GAEVBuffer:
                 self.ret_buf[-self.count:],
                 self.logp_buf[-self.count:],
                 self.val_buf[-self.count:],
-                self.logp_pik_buf[-self.count:],
-                self.weights_all]
+                self.logp_pik_buf[-self.count:]]
 
     def update(self):
         tail = self.max_size - self.size
@@ -401,12 +394,12 @@ class TRPOBuffer(GAEBuffer):
         super().__init__(obs_shape=obs_shape, ac_shape=ac_shape, size=size,
                          gamma=gamma, lam=lam)
 
-    def store(self, obs, act, rew, done, val, logp, mu, logstd):
+    def store(self, obs, ac, rew, done, val, logp, mu, logstd):
         assert mu.shape == self.ac_shape
         assert logstd.shape == self.ac_shape
         self.mu_buf[self.ptr] = mu
         self.logstd_buf[0] = logstd
-        super().store(obs, act, rew, done, val, logp)
+        super().store(obs, ac, rew, done, val, logp)
 
     def finish_path(self, last_val=None):
         super().finish_path(last_val=last_val)
