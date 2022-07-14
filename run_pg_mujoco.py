@@ -79,7 +79,7 @@ def main():
         raise
 
     timestamp = time.strftime("%Y-%m-%d-%H_%M_%S", time.localtime(time.time()))
-    base_name = args.alg + '-' + timestamp
+    base_name = args.alg + '_' + f'seed{args.seed}' + '_' + timestamp
     base_dir = os.path.join(
         args.data_dir, f"my_results/{args.env}/{args.dir_name}/{base_name}")
     if not os.path.exists(base_dir):
