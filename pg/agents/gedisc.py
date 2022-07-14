@@ -292,7 +292,7 @@ class PPOAgent(BaseAgent):
         vf_loss_buf = []
         ent_buf = []
         kl_buf = []
-        absratio_buf = []
+        ratio_buf = []
         ratioclipfrac_buf = []
         gradclipped_buf = []
         tv_on_buf = []
@@ -349,7 +349,7 @@ class PPOAgent(BaseAgent):
                 kl_buf.append(kl)
                 # Unpack infos
                 absratio, ratioclipfrac, gradclipped, tv_on, tv = infos
-                absratio_buf.append(absratio)
+                ratio_buf.append(absratio)
                 ratioclipfrac_buf.append(ratioclipfrac)
                 gradclipped_buf.append(gradclipped)
                 tv_on_buf.append(tv_on)
@@ -384,7 +384,7 @@ class PPOAgent(BaseAgent):
                 tf.compat.v1.Summary.Value(
                     tag="loss/lr", simple_value=lr),
                 tf.compat.v1.Summary.Value(
-                    tag="loss/absratio", simple_value=np.mean(absratio_buf)),
+                    tag="loss/ratio", simple_value=np.mean(ratio_buf)),
                 tf.compat.v1.Summary.Value(
                     tag="loss/ratioclipfrac", simple_value=np.mean(ratioclipfrac_buf)),
                 tf.compat.v1.Summary.Value(
