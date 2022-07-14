@@ -60,8 +60,8 @@ def main():
     parser.add_argument('--env', type=str,
                         default='Walker2d-v2')
     parser.add_argument('--alg', type=str, default='PPO',
-                        choices=['A2C', 'VPG', 'TRPO', 'TRPO2',
-                                 'PPO', 'PPO2', 'DISC', 'DISC2', 'GePPO', 'GeDISC'],
+                        choices=['A2C', 'VPG', 'TRPO', 'TRPO2', 'KLCPPO',
+                                 'PPO', 'PPO2', 'DISC', 'RCPPO', 'GePPO', 'GeDISC'],
                         help='Experiment name')
     parser.add_argument('--allow_eval', action='store_true',
                         help='Whether to eval agent')
@@ -69,12 +69,10 @@ def main():
                         help='Whether to save model')
     parser.add_argument('--total_steps', type=float, default=1e6,
                         help='Total steps trained')
+    parser.add_argument('--seed', type=int, default=0,
+                        help='Random seed')
     parser.add_argument('--uniform', action='store_true',
                         help='Total steps trained')
-    parser.add_argument('--thresh', type=float, default=0.4,
-                        help='Thresh for GeDISC')
-    parser.add_argument('--kl', type=float, default=0.001,
-                        help='KL divergence')
     args = parser.parse_args()
 
     if not os.path.exists(args.data_dir):
@@ -107,15 +105,15 @@ def main():
         f2.write('Step\tAvgEpRet\n')
 
     # Random seed
-    seed = int(time.time()) % 1000
-    tf.compat.v1.set_random_seed(seed)
-    np.random.seed(seed)
+    # seed = int(time.time()) % 1000
+    tf.compat.v1.set_random_seed(args.seed)
+    np.random.seed(args.seed)
 
     # Environment
     env = gym.make(args.env)
-    env.seed(seed)
+    env.seed(args.seed)
     env_eval = gym.make(args.env)
-    env_eval.seed(seed)
+    env_eval.seed(args.seed)
     obs_shape = env.observation_space.shape
     ac_shape = env.action_space.shape
     ac_max = float(env.action_space.high[0])
@@ -175,7 +173,7 @@ def main():
     elif args.alg == 'PPO':
         import pg.agents.ppo as PPO
         agent = PPO.PPOAgent(sess, obs_shape, ac_shape, horizon=2048,
-                             gamma=0.99, lam=0.95, fixed_lr=False)
+                             gamma=0.995, lam=0.97, fixed_lr=False)
         # 1M // 2048 / 488 = 1
         log_interval = 1
     elif args.alg == 'PPOV':
@@ -196,48 +194,34 @@ def main():
                               gamma=0.99, lam=0.95, fixed_lr=False)
         # 1M // 2048 / 488 = 1
         log_interval = 1
-    elif args.alg == 'DISC2':
-        import pg.agents.rcppo as DISC2
-        agent = DISC2.PPOAgent(sess, summary_writer, obs_shape, ac_shape, horizon=2048,
-                               gamma=0.99, lam=0.95, fixed_lr=False)
+    elif args.alg == 'RCPPO':
+        import pg.agents.rcppo as RCPPO
+        agent = RCPPO.PPOAgent(sess, summary_writer, obs_shape, ac_shape, horizon=2048,
+                               gamma=0.995, lam=0.97, fixed_lr=False)
+        # 1M // 2048 / 488 = 1
+        log_interval = 1
+    elif args.alg == 'KLCPPO':
+        import pg.agents.klcppo as KLCPPO
+        agent = KLCPPO.PPOAgent(sess, summary_writer, obs_shape, ac_shape, horizon=2048,
+                               gamma=0.995, lam=0.97, fixed_lr=False)
         # 1M // 2048 / 488 = 1
         log_interval = 1
     elif args.alg == 'GeDISC':
         import pg.agents.gedisc as GeDISC
         agent = GeDISC.PPOAgent(sess, summary_writer, env, obs_shape, ac_shape, horizon=2048,
-                                gamma=0.99, lam=0.95, fixed_lr=False, uniform=True, 
-                                thresh=args.thresh, target_kl=args.kl)
+                                gamma=0.99, lam=0.95, fixed_lr=False, uniform=True)
         # 1M // 2048 / 488 = 1
         log_interval = 1
     elif args.alg == 'GePPO':
         import pg.agents.geppo as GePPO
-        agent = GePPO.PPOAgent(sess, summary_writer, obs_shape, ac_shape, horizon=2048,
-                               gamma=0.99, lam=0.95, fixed_lr=False, uniform=True)
+        agent = GePPO.PPOAgent(sess, summary_writer, obs_shape, ac_shape, horizon=1024,
+                               gamma=0.99, lam=0.95, fixed_lr=False, uniform=False)
         # 1M // 2048 / 488 = 1
-        log_interval = 1
+        log_interval = 2
     else:
         raise ValueError('Unknown agent: {}'.format(args.alg))
 
     sess.run(tf.compat.v1.global_variables_initializer())
-    # agent.actor.save_weights('/data/hanjl/debug_data/actor_weight')
-    # agent.critic.save_weights('/data/hanjl/debug_data/critic_weight')
-    # with open(f'/data/hanjl/debug_data/actor_weight.pkl', 'wb') as f:
-    #     pickle.dump(sess.run(agent.pi_flatted), f)
-    # with open(f'/data/hanjl/debug_data/critic_weight.pkl', 'wb') as f:
-    #     pickle.dump(sess.run(agent.vf_flatted), f)
-    # agent.actor.load_weights('/data/hanjl/debug_data/param')
-    # with open('/data/hanjl/debug_data/actor_param.pkl', 'rb') as f:
-    #     actor_param = pickle.load(f)
-    #     agent.assign_actor_weights(actor_param)
-    # with open('/data/hanjl/debug_data/critic_param.pkl', 'rb') as f:
-    #     critic_param = pickle.load(f)
-    #     agent.assign_critic_weights(critic_param)
-
-    # with open(f'/data/hanjl/debug_data/buf_data_1.pkl', 'rb') as f:
-    #     buf_data = pickle.load(f)
-
-    # [s_all, a_all, adv_all, rtg_all, neglogp_old_all, v_all, rho_all] = buf_data
-    # v = sess.run(agent.v, feed_dict={agent.obs_ph: s_all})
 
     # Params
     horizon = agent.horizon
@@ -264,7 +248,7 @@ def main():
         # Clear buffer
         # agent.buffer.reset()
         for t in range(1, horizon + 1):
-            ac = agent.select_action(obs)
+            ac, val, logp = agent.select_action(obs)
 
             next_obs, reward, done, info = env.step(ac)
             next_raw_obs, raw_rew = env.get_raw()
@@ -272,7 +256,7 @@ def main():
             ep_ret += raw_rew
 
             # done = done if ep_len < max_ep_len else False
-            agent.store_transition(obs, ac, reward, done, raw_obs, raw_rew)
+            agent.buffer.store(obs, ac, reward, done, raw_obs, raw_rew, val, logp)
 
             obs = next_obs
             raw_obs = next_raw_obs
