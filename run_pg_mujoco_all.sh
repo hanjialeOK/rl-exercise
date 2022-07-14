@@ -27,22 +27,22 @@ for i in $(seq 1 ${LEN})
 do
     echo "${CYAN}${BOLD}Running ${ENV[i]} (${i}/${LEN}) for six experiments...${RESET}"
     CUDA_VISIBLE_DEVICES=0 PYTHONWARNINGS=ignore python run_pg_mujoco.py \
-        --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} --total_steps ${STEPS} > /dev/null &
+        --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} --total_steps ${STEPS} --seed 0 > /dev/null &
     sleep 5
     CUDA_VISIBLE_DEVICES=0 PYTHONWARNINGS=ignore python run_pg_mujoco.py \
-        --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} --total_steps ${STEPS} > /dev/null &
+        --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} --total_steps ${STEPS} --seed 1 > /dev/null &
     sleep 5
     CUDA_VISIBLE_DEVICES=0 PYTHONWARNINGS=ignore python run_pg_mujoco.py \
-        --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} --total_steps ${STEPS} > /dev/null &
+        --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} --total_steps ${STEPS} --seed 2 > /dev/null &
     sleep 5
     CUDA_VISIBLE_DEVICES=1 PYTHONWARNINGS=ignore python run_pg_mujoco.py \
-        --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} --total_steps ${STEPS} > /dev/null &
+        --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} --total_steps ${STEPS} --seed 3 > /dev/null &
     sleep 5
     CUDA_VISIBLE_DEVICES=1 PYTHONWARNINGS=ignore python run_pg_mujoco.py \
-        --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} --total_steps ${STEPS} > /dev/null &
+        --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} --total_steps ${STEPS} --seed 4 > /dev/null &
     sleep 5
     CUDA_VISIBLE_DEVICES=1 PYTHONWARNINGS=ignore python run_pg_mujoco.py \
-        --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} --total_steps ${STEPS} > /dev/null &
+        --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} --total_steps ${STEPS} --seed 5 > /dev/null &
     # Waiting for all subprocess finished.
     wait
     sleep 10
@@ -52,4 +52,4 @@ duration=${SECONDS}
 h=$[${duration}/3600]
 m=$[(${duration}/60)%60]
 s=$[${duration}%60]
-printf "%s%02d:%02d:%02d%s\\n" "Completed! Time taken: " "${h}" "${m}" "${s}" "."
+echo "Completed! Time taken: ${h}h:${m}m:${s}s."
