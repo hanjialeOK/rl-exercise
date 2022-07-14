@@ -262,14 +262,14 @@ class PPOAgent(BaseAgent):
             self.get_action_ops, feed_dict={self.ob1_ph: obs.reshape(1, -1)})
         self.extra_info = [v, logp_pi]
         ac = mu if deterministic else pi
-        return pi[0]
+        return pi[0], v[0], logp_pi[0]
 
     def compute_v(self, obs):
         v = self.sess.run(
             self.v1, feed_dict={self.ob1_ph: obs.reshape(1, -1)})
         return v[0]
 
-    def store_transition(self, obs, action, reward, done):
-        [v, logp_pi] = self.extra_info
-        self.buffer.store(obs, action, reward, done,
-                          v[0], logp_pi[0])
+    # def store_transition(self, obs, action, reward, done, raw_obs, raw_rew):
+    #     [v, logp_pi] = self.extra_info
+    #     self.buffer.store(obs, action, reward, done, raw_obs, raw_rew,
+    #                       v[0], logp_pi[0])
