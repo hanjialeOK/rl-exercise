@@ -63,7 +63,7 @@ class PPOAgent(BaseAgent):
                  ent_coef=0.0, vf_coef=0.5, max_grad_norm=0.5, target_j=1e-3,
                  horizon=2048, nminibatches=32, gamma=0.99, lam=0.95,
                  alpha=1, grad_clip=False, vf_clip=True, fixed_lr=False,
-                 nlatest=64, gedisc=False):
+                 nlatest=64, geppo=False):
         self.sess = sess
         self.summary_writer = summary_writer
         self.obs_dim = obs_dim
@@ -82,7 +82,7 @@ class PPOAgent(BaseAgent):
         self.grad_clip = grad_clip
         self.vf_clip = vf_clip
         self.fixed_lr = fixed_lr
-        self.gedisc = gedisc
+        self.geppo = geppo
 
         self.buffer = Buffer.DISCBuffer(
             obs_dim, act_dim, size=horizon, nlatest=nlatest, gamma=gamma, lam=lam,
@@ -159,34 +159,6 @@ class PPOAgent(BaseAgent):
 
         v = self.critic(obs_ph)
 
-        # PPO objectives
-        # pi(a|s) / pi_old(a|s), should be one at the first iteration
-        ratio_disc = tf.exp(logp_a_disc - logp_disc_old_ph)
-        ratio_disc_pik = tf.exp(logp_a_disc - logp_disc_pik_ph)
-        center = ratio_disc_pik if self.gedisc else 1.0
-        ratio_disc_clip = tf.clip_by_value(
-            ratio_disc, center - self.clip_ratio, center + self.clip_ratio)
-        # ratio_disc_min = tf.where(
-        #     adv_ph > 0,
-        #     tf.minimum(ratio_disc, ratio_disc_clip),
-        #     tf.maximum(ratio_disc, ratio_disc_clip))
-        ratio = tf.reduce_prod(ratio_disc, axis=1)
-        # ratio_min = tf.reduce_prod(ratio_disc_min, axis=1)
-
-        sgn = tf.expand_dims(tf.sign(adv_ph), axis=1)
-        ratio_min = tf.reduce_prod(sgn * tf.minimum(ratio_disc * sgn, ratio_disc_clip * sgn), axis=1)
-
-        logp_old = tf.reduce_sum(logp_disc_old_ph, axis=1)
-        logp_pik = tf.reduce_sum(logp_disc_pik_ph, axis=1)
-        logp_a = tf.reduce_sum(logp_a_disc, axis=1)
-        approxkl = 0.5 * tf.reduce_mean(tf.square(logp_pik - logp_a))
-        pi_loss_ctl = 0.5 * tf.reduce_mean(tf.square(logp_old - logp_a)*on_policy_ph)
-        # pi_loss_ctl = tf.reduce_mean(kl*on_policy_ph)
-
-        # pi_loss = -tf.reduce_mean(adv_ph * ratio_min )
-        pi_loss = -tf.reduce_mean(adv_ph * ratio_min / tf.stop_gradient(tf.reduce_mean(ratio_min)))
-        pi_loss += alpha_ph * pi_loss_ctl
-
         if self.vf_clip:
             valclipped = val_ph + \
                 tf.clip_by_value(v - val_ph, -self.clip_ratio, self.clip_ratio)
@@ -196,15 +168,46 @@ class PPOAgent(BaseAgent):
         else:
             vf_loss = 0.5 * tf.reduce_mean(tf.square(v - ret_ph))
 
+        # PPO objectives
+        # pi(a|s) / pi_old(a|s), should be one at the first iteration
+        logp_old = tf.reduce_sum(logp_disc_old_ph, axis=1)
+        logp_pik = tf.reduce_sum(logp_disc_pik_ph, axis=1)
+        logp_a = tf.reduce_sum(logp_a_disc, axis=1)
+        ratio_disc = tf.exp(logp_a_disc - logp_disc_old_ph)
+        ratio_disc_pik = tf.exp(logp_disc_pik_ph - logp_disc_old_ph)
+        center = ratio_disc_pik if self.geppo else 1.0
+        ratio_disc_clip = tf.clip_by_value(
+            ratio_disc, center - self.clip_ratio, center + self.clip_ratio)
+        if self.geppo:
+            ratio_disc_clip = tf.clip_by_value(
+                ratio_disc_clip, 1.0 - 0.4, 1.0 + 0.4)
+        # ratio_disc_min = tf.where(
+        #     adv_ph > 0,
+        #     tf.minimum(ratio_disc, ratio_disc_clip),
+        #     tf.maximum(ratio_disc, ratio_disc_clip))
+        ratio = tf.reduce_prod(ratio_disc, axis=1)
+        ratio_pik = tf.reduce_prod(ratio_disc_pik, axis=1)
+
+        sgn = tf.expand_dims(tf.sign(adv_ph), axis=1)
+        ratio_min = tf.reduce_prod(sgn * tf.minimum(ratio_disc * sgn, ratio_disc_clip * sgn), axis=1)
+        # pi_loss = -tf.reduce_mean(adv_ph * ratio_min )
+        pi_loss = -tf.reduce_mean(adv_ph * ratio_min / tf.stop_gradient(tf.reduce_mean(ratio_min)))
+
+        pi_loss_ctl = 0.5 * tf.reduce_mean(tf.square(logp_old - logp_a)*on_policy_ph)
+        # pi_loss_ctl = tf.reduce_mean(kl*on_policy_ph)
+        pi_loss += alpha_ph * pi_loss_ctl
+
         # Info (useful to watch during learning)
         # a sample estimate for KL-divergence, easy to compute
-        # meankl = 0.5 * tf.reduce_mean(tf.square(logp_old - logp_a))
+        approxkl = 0.5 * tf.reduce_mean(tf.square(logp_pik - logp_a))
         absratio = tf.reduce_mean(tf.abs(ratio - 1.0) + 1.0)
         ratioclipped = tf.where(
             adv_ph > 0,
-            ratio_disc > (1.0 + self.clip_ratio),
-            ratio_disc < (1.0 - self.clip_ratio))
+            ratio_disc > (center + self.clip_ratio),
+            ratio_disc < (center - self.clip_ratio))
         ratioclipfrac = tf.reduce_mean(tf.cast(ratioclipped, tf.float32))
+        tv_on = 0.5 * tf.reduce_mean(tf.abs(ratio - ratio_pik)*on_policy_ph)
+        tv = 0.5 * tf.reduce_mean(tf.abs(ratio - ratio_pik))
 
         # Total loss
         loss = pi_loss - meanent * self.ent_coef + vf_loss * self.vf_coef
@@ -238,7 +241,7 @@ class PPOAgent(BaseAgent):
         self.train_op = train_op
 
         self.losses = [pi_loss_ctl, pi_loss, vf_loss, meanent, meankl]
-        self.infos = [absratio, ratioclipfrac, gradclipped]
+        self.infos = [absratio, ratioclipfrac, gradclipped, tv_on, tv]
 
     def _build_sync_op(self):
         sync_qt_ops = []
@@ -257,7 +260,8 @@ class PPOAgent(BaseAgent):
         rho_all = np.exp(logp_pik_all - logp_old_all)
         rho_disc_all = np.exp(logp_disc_pik_all - logp_disc_old_all)
 
-        absrho_all = np.abs(rho_disc_all - 1) + 1
+        absrho_disc_all = np.abs(rho_disc_all - 1) + 1
+        absrho_all = np.abs(rho_all - 1) + 1
         n_trajs = rho_disc_all.shape[0] // self.horizon
         meanabsrho_buf = np.zeros(n_trajs)
 
@@ -265,7 +269,7 @@ class PPOAgent(BaseAgent):
         for s in range(n_trajs):
             start = s*self.horizon
             end = (s+1)*self.horizon
-            meanabsrho_buf[s] = np.mean(absrho_all[start:end])
+            meanabsrho_buf[s] = np.mean(absrho_disc_all[start:end])
             if meanabsrho_buf[s] <= 1 + 0.1:
                 filter_inds = np.concatenate([filter_inds, np.arange(start, end)])
 
@@ -293,6 +297,8 @@ class PPOAgent(BaseAgent):
         ratio_buf = []
         ratioclipfrac_buf = []
         gradclipped_buf = []
+        tv_on_buf = []
+        tv_buf = []
 
         self.sess.run(self.sync_op)
 
@@ -313,10 +319,6 @@ class PPOAgent(BaseAgent):
                 else:
                     idx_off = []
                 mbinds = np.concatenate([idx_off, idx_on]).astype(np.int64)
-                # end = start + minibatch
-                # mbinds = indices[start:end]
-                # slices = [arr[mbinds] for arr in buf_data]
-                # [obs, actions, advs, rets, logprobs, values, rhos] = slices
                 advs = adv_filter[mbinds]
                 rhos = rho_filter[mbinds]
                 rhos = np.minimum(rhos, 1.0)
@@ -347,10 +349,12 @@ class PPOAgent(BaseAgent):
                 ent_buf.append(ent)
                 kl_buf.append(kl)
                 # Unpack infos
-                ratio, ratioclipfrac, gradclipped = infos
+                ratio, ratioclipfrac, gradclipped, tv_on, tv = infos
                 ratio_buf.append(ratio)
                 ratioclipfrac_buf.append(ratioclipfrac)
                 gradclipped_buf.append(gradclipped)
+                tv_on_buf.append(tv_on)
+                tv_buf.append(tv)
 
             tv_inputs = {
                 self.obs_ph: obs_filter,
@@ -389,7 +393,9 @@ class PPOAgent(BaseAgent):
                 tf.compat.v1.Summary.Value(
                     tag="loss/trajs_active", simple_value=n_trajs_active),
                 tf.compat.v1.Summary.Value(
-                    tag="loss/absrho", simple_value=np.mean(meanabsrho_buf)),
+                    tag="loss/tv", simple_value=np.mean(tv_buf)),
+                tf.compat.v1.Summary.Value(
+                    tag="loss/tv_on", simple_value=np.mean(tv_on_buf)),
                 tf.compat.v1.Summary.Value(
                     tag="loss/alpha", simple_value=self.alpha)
             ])
@@ -405,17 +411,17 @@ class PPOAgent(BaseAgent):
             self.get_action_ops, feed_dict={self.ob1_ph: obs.reshape(1, -1)})
         self.extra_info = [v, logp_pi]
         ac = mu if deterministic else pi
-        return pi[0]
+        return pi[0], v[0], logp_pi[0]
 
     def compute_v(self, obs):
         v = self.sess.run(
             self.v1, feed_dict={self.ob1_ph: obs.reshape(1, -1)})
         return v[0]
 
-    def store_transition(self, obs, ac, reward, done, raw_obs, raw_rew):
-        [v, logp_pi] = self.extra_info
-        self.buffer.store(obs, ac, reward, done, raw_obs, raw_rew,
-                          v[0], logp_pi[0])
+    # def store_transition(self, obs, ac, reward, done, raw_obs, raw_rew):
+    #     [v, logp_pi] = self.extra_info
+    #     self.buffer.store(obs, ac, reward, done, raw_obs, raw_rew,
+    #                       v[0], logp_pi[0])
 
     def compute_v_pik(self, obs):
         return self.sess.run(self.v, feed_dict={self.obs_ph: obs})
