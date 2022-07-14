@@ -144,17 +144,6 @@ class PPOAgent(BaseAgent):
 
         v = self.critic(obs_ph)
 
-        # PPO objectives
-        # pi(a|s) / pi_old(a|s), should be one at the first iteration
-        ratio = tf.exp(logp_a - logp_old_ph)
-        ratio_pik = tf.exp(logp_pik_ph - logp_old_ph)
-        pi_loss1 = -adv_ph * ratio
-        pi_loss2 = -adv_ph * tf.clip_by_value(
-            ratio, ratio_pik - self.clip_ratio, ratio_pik + self.clip_ratio)
-        pi_loss = tf.reduce_mean(weights_ph * tf.maximum(pi_loss1, pi_loss2))
-
-        tv = 0.5 * tf.reduce_mean(weights_ph * tf.abs(ratio - ratio_pik))
-
         if self.vf_clip:
             valclipped = val_ph + \
                 tf.clip_by_value(v - val_ph, -self.clip_ratio, self.clip_ratio)
@@ -164,10 +153,20 @@ class PPOAgent(BaseAgent):
         else:
             vf_loss = 0.5 * tf.reduce_mean(weights_ph * tf.square(v - ret_ph))
 
+        # PPO objectives
+        # pi(a|s) / pi_old(a|s), should be one at the first iteration
+        ratio = tf.exp(logp_a - logp_old_ph)
+        ratio_pik = tf.exp(logp_pik_ph - logp_old_ph)
+        pi_loss1 = -adv_ph * ratio
+        pi_loss2 = -adv_ph * tf.clip_by_value(
+            ratio, ratio_pik - self.clip_ratio, ratio_pik + self.clip_ratio)
+        pi_loss = tf.reduce_mean(weights_ph * tf.maximum(pi_loss1, pi_loss2))
+
         # Info (useful to watch during learning)
         # a sample estimate for KL-divergence, easy to compute
-        meankl = 0.5 * tf.reduce_mean(tf.square(logp_pik_ph - logp_a))
-        absratio = tf.reduce_mean(tf.abs(ratio - ratio_pik) + 1.0)
+        tv = 0.5 * tf.reduce_mean(weights_ph * tf.abs(ratio - ratio_pik))
+        approxkl = 0.5 * tf.reduce_mean(tf.square(logp_pik_ph - logp_a))
+        absratio = tf.reduce_mean(tf.abs(ratio - 1.0) + 1.0)
         ratioclipped = tf.where(
             adv_ph > 0,
             ratio > (ratio_pik + self.clip_ratio),
@@ -203,7 +202,7 @@ class PPOAgent(BaseAgent):
         self.absratio = absratio
         self.pi_loss = pi_loss
         self.vf_loss = vf_loss
-        self.meankl = meankl
+        self.approxkl = approxkl
         self.meanent = meanent
         self.tv = tv
         self.ratioclipfrac = ratioclipfrac
@@ -212,9 +211,8 @@ class PPOAgent(BaseAgent):
         self.pi_train_op = pi_train_op
         self.vf_train_op = vf_train_op
 
-        self.losses = [pi_loss, vf_loss, meanent, meankl, tv]
-        self.infos = [absratio, ratioclipfrac, gradclipped]
-        self.count = 0
+        self.losses = [pi_loss, vf_loss, meanent, approxkl]
+        self.infos = [absratio, ratioclipfrac, gradclipped, tv]
 
     def update(self, frac, log2board, step):
         buf_data = self.buffer.vtrace()
@@ -271,17 +269,17 @@ class PPOAgent(BaseAgent):
                     [self.infos, self.losses, self.pi_train_op, self.vf_train_op],
                     feed_dict=inputs)
                 # Unpack losses
-                pi_loss, vf_loss, ent, kl, tv = losses
+                pi_loss, vf_loss, ent, kl = losses
                 pi_loss_buf.append(pi_loss)
                 vf_loss_buf.append(vf_loss)
                 ent_buf.append(ent)
                 kl_buf.append(kl)
-                tv_buf.append(tv)
                 # Unpack infos
-                ratio, ratioclipfrac, gradclipped = infos
+                ratio, ratioclipfrac, gradclipped, tv = infos
                 ratio_buf.append(ratio)
                 ratioclipfrac_buf.append(ratioclipfrac)
                 gradclipped_buf.append(gradclipped)
+                tv_buf.append(tv)
 
             tv_inputs = {
                 self.obs_ph: obs_all,
