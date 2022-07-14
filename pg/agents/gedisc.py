@@ -186,7 +186,7 @@ class PPOAgent(BaseAgent):
         pi_loss = tf.reduce_mean(weights_ph * tf.maximum(pi_loss1, pi_loss2))
 
         pi_loss_ctl = 0.5 * tf.reduce_mean(tf.square(logp_a - logp_pik)*on_policy_ph)
-        pi_loss += self.beta_ph * pi_loss_ctl
+        pi_loss += beta_ph * pi_loss_ctl
 
         # Info (useful to watch during learning)
         approxkl = 0.5 * tf.reduce_mean(tf.square(logp_pik - logp_a))
