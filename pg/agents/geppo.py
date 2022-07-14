@@ -189,7 +189,7 @@ class PPOAgent(BaseAgent):
         if self.grad_clip:
             grads, _grad_norm = tf.clip_by_global_norm(
                 grads, self.max_grad_norm)
-            gradclipped = _grad_norm > self.max_grad_norm
+        gradclipped = _grad_norm > self.max_grad_norm if self.grad_clip else tf.zeros(())
         grads_and_vars = list(zip(grads, vars))
 
         pi_train_op = pi_optimizer.apply_gradients(grads_and_vars)
