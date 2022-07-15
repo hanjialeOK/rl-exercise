@@ -63,7 +63,7 @@ class PPOAgent(BaseAgent):
                  ent_coef=0.0, vf_coef=0.5, max_grad_norm=0.5, target_j=1e-3,
                  horizon=2048, nminibatches=32, gamma=0.99, lam=0.95,
                  alpha=1, grad_clip=False, vf_clip=True, fixed_lr=False,
-                 nlatest=64, geppo=False):
+                 nlatest=64):
         self.sess = sess
         self.summary_writer = summary_writer
         self.obs_dim = obs_dim
@@ -82,7 +82,6 @@ class PPOAgent(BaseAgent):
         self.grad_clip = grad_clip
         self.vf_clip = vf_clip
         self.fixed_lr = fixed_lr
-        self.geppo = geppo
 
         self.buffer = Buffer.DISCBuffer(
             obs_dim, act_dim, size=horizon, nlatest=nlatest, gamma=gamma, lam=lam,
@@ -175,12 +174,8 @@ class PPOAgent(BaseAgent):
         logp_a = tf.reduce_sum(logp_a_disc, axis=1)
         ratio_disc = tf.exp(logp_a_disc - logp_disc_old_ph)
         ratio_disc_pik = tf.exp(logp_disc_pik_ph - logp_disc_old_ph)
-        center = ratio_disc_pik if self.geppo else 1.0
         ratio_disc_clip = tf.clip_by_value(
-            ratio_disc, center - self.clip_ratio, center + self.clip_ratio)
-        if self.geppo:
-            ratio_disc_clip = tf.clip_by_value(
-                ratio_disc_clip, 1.0 - 0.4, 1.0 + 0.4)
+            ratio_disc, 1.0 - self.clip_ratio, 1.0 + self.clip_ratio)
         # ratio_disc_min = tf.where(
         #     adv_ph > 0,
         #     tf.minimum(ratio_disc, ratio_disc_clip),
@@ -203,8 +198,8 @@ class PPOAgent(BaseAgent):
         absratio = tf.reduce_mean(tf.abs(ratio - 1.0) + 1.0)
         ratioclipped = tf.where(
             adv_ph > 0,
-            ratio_disc > (center + self.clip_ratio),
-            ratio_disc < (center - self.clip_ratio))
+            ratio_disc > (1.0 + self.clip_ratio),
+            ratio_disc < (1.0 - self.clip_ratio))
         ratioclipfrac = tf.reduce_mean(tf.cast(ratioclipped, tf.float32))
         tv_on = 0.5 * tf.reduce_mean(tf.abs(ratio - ratio_pik)*on_policy_ph)
         tv = 0.5 * tf.reduce_mean(tf.abs(ratio - ratio_pik))
