@@ -56,5 +56,5 @@ class VecNormalize(VecEnvWrapper):
         self.ret = np.zeros(self.num_envs)
         obs = self.venv.reset()
         self.raw_obs = obs.copy()
-        self.raw_rews = np.zeros(self.num_envs)
+        self.raw_rews = 0
         return self._obfilt(obs)
