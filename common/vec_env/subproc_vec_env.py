@@ -17,8 +17,7 @@ def worker(remote, parent_remote, env_fn_wrappers):
         while True:
             cmd, data = remote.recv()
             if cmd == 'step':
-                remote.send([step_env(env, action)
-                            for env, action in zip(envs, data)])
+                remote.send([step_env(env, action) for env, action in zip(envs, data)])
             elif cmd == 'reset':
                 remote.send([env.reset() for env in envs])
             elif cmd == 'render':
@@ -27,8 +26,7 @@ def worker(remote, parent_remote, env_fn_wrappers):
                 remote.close()
                 break
             elif cmd == 'get_spaces_spec':
-                remote.send(CloudpickleWrapper(
-                    (envs[0].observation_space, envs[0].action_space, envs[0].spec)))
+                remote.send(CloudpickleWrapper((envs[0].observation_space, envs[0].action_space, envs[0].spec)))
             else:
                 raise NotImplementedError
     except KeyboardInterrupt:
@@ -43,7 +41,6 @@ class SubprocVecEnv(VecEnv):
     VecEnv that runs multiple environments in parallel in subproceses and communicates with them via pipes.
     Recommended to use when num_envs > 1 and step() can be a bottleneck.
     """
-
     def __init__(self, env_fns, spaces=None, context='spawn', in_series=1):
         """
         Arguments:
@@ -60,8 +57,7 @@ class SubprocVecEnv(VecEnv):
         self.nremotes = nenvs // in_series
         env_fns = np.array_split(env_fns, self.nremotes)
         ctx = mp.get_context(context)
-        self.remotes, self.work_remotes = zip(
-            *[ctx.Pipe() for _ in range(self.nremotes)])
+        self.remotes, self.work_remotes = zip(*[ctx.Pipe() for _ in range(self.nremotes)])
         self.ps = [ctx.Process(target=worker, args=(work_remote, remote, CloudpickleWrapper(env_fn)))
                    for (work_remote, remote, env_fn) in zip(self.work_remotes, self.remotes, env_fns)]
         for p in self.ps:

@@ -40,8 +40,7 @@ def obs_space_info(obs_space):
         subspaces = obs_space.spaces
     elif isinstance(obs_space, gym.spaces.Tuple):
         assert isinstance(obs_space.spaces, tuple)
-        subspaces = {i: obs_space.spaces[i]
-                     for i in range(len(obs_space.spaces))}
+        subspaces = {i: obs_space.spaces[i] for i in range(len(obs_space.spaces))}
     else:
         subspaces = {None: obs_space}
     keys = []

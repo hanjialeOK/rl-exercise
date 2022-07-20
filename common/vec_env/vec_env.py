@@ -173,8 +173,7 @@ class VecEnvWrapper(VecEnv):
 
     def __getattr__(self, name):
         if name.startswith('_'):
-            raise AttributeError(
-                "attempted to get missing private attribute '{}'".format(name))
+            raise AttributeError("attempted to get missing private attribute '{}'".format(name))
         return getattr(self.venv, name)
 
 
