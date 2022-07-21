@@ -58,16 +58,16 @@ class CriticMLP(tf.keras.Model):
 
 
 class PPOAgent(BaseAgent):
-    def __init__(self, sess, summary_writer, env, obs_dim, act_dim,
+    def __init__(self, sess, summary_writer, env,
                  clip_ratio=0.4, lr=3e-4, train_iters=10, target_kl=0.01,
-                 ent_coef=0.0, vf_coef=0.5, max_grad_norm=0.5, target_j=1e-3,
+                 ent_coef=0.0, vf_coef=0.5, max_grad_norm=0.5, jtarg=1e-3,
                  horizon=2048, nminibatches=32, gamma=0.99, lam=0.95,
                  alpha=1, grad_clip=False, vf_clip=True, fixed_lr=False,
                  nlatest=64):
         self.sess = sess
         self.summary_writer = summary_writer
-        self.obs_dim = obs_dim
-        self.act_dim = act_dim
+        self.obs_shape = env.observation_space.shape
+        self.ac_shape = env.action_space.shape
         self.clip_ratio = clip_ratio
         self.lr = lr
         self.train_iters = train_iters
@@ -77,15 +77,14 @@ class PPOAgent(BaseAgent):
         self.ent_coef = ent_coef
         self.vf_coef = vf_coef
         self.max_grad_norm = max_grad_norm
-        self.target_j = target_j
+        self.jtarg = jtarg
         self.alpha = alpha
         self.grad_clip = grad_clip
         self.vf_clip = vf_clip
         self.fixed_lr = fixed_lr
 
         self.buffer = Buffer.DISCBuffer(
-            obs_dim, act_dim, size=horizon, nlatest=nlatest, gamma=gamma, lam=lam,
-            obfilt=env._obfilt, rewfilt=env._rewfilt,
+            env, horizon=horizon, nlatest=nlatest, gamma=gamma, lam=lam,
             compute_v_pik=self.compute_v_pik, compute_logp_pik=self.compute_logp_pik)
         self._build_network()
         self._build_train_op()
@@ -93,25 +92,25 @@ class PPOAgent(BaseAgent):
         self.sync_op = self._build_sync_op()
 
     def _build_network(self):
-        self.actor = ActorMLP(self.act_dim, name='pi')
-        self.actor_pik = ActorMLP(self.act_dim, name='pik')
+        self.actor = ActorMLP(self.ac_shape, name='pi')
+        self.actor_pik = ActorMLP(self.ac_shape, name='pik')
         self.critic = CriticMLP(name='vf')
 
     def _build_train_op(self):
         self.ob1_ph = ob1_ph = tf.compat.v1.placeholder(
-            shape=(1, ) + self.obs_dim, dtype=tf.float32, name="ob1_ph")
+            shape=(1, ) + self.obs_shape, dtype=tf.float32, name="ob1_ph")
         self.obs_ph = obs_ph = tf.compat.v1.placeholder(
-            shape=(None, ) + self.obs_dim, dtype=tf.float32, name="obs_ph")
+            shape=(None, ) + self.obs_shape, dtype=tf.float32, name="obs_ph")
         self.ac_ph = ac_ph = tf.compat.v1.placeholder(
-            shape=(None, ) + self.act_dim, dtype=tf.float32, name="ac_ph")
+            shape=(None, ) + self.ac_shape, dtype=tf.float32, name="ac_ph")
         self.adv_ph = adv_ph = tf.compat.v1.placeholder(
             shape=[None, ], dtype=tf.float32, name="adv_ph")
         self.ret_ph = ret_ph = tf.compat.v1.placeholder(
             shape=[None, ], dtype=tf.float32, name="ret_ph")
         self.logp_disc_old_ph = logp_disc_old_ph = tf.compat.v1.placeholder(
-            shape=(None, ) + self.act_dim, dtype=tf.float32, name="logp_disc_old_ph")
+            shape=(None, ) + self.ac_shape, dtype=tf.float32, name="logp_disc_old_ph")
         self.logp_disc_pik_ph = logp_disc_pik_ph = tf.compat.v1.placeholder(
-            shape=(None, ) + self.act_dim, dtype=tf.float32, name="logp_disc_pik_ph")
+            shape=(None, ) + self.ac_shape, dtype=tf.float32, name="logp_disc_pik_ph")
         self.val_ph = val_ph = tf.compat.v1.placeholder(
             shape=[None, ], dtype=tf.float32, name="val_ph")
         self.lr_ph = lr_ph = tf.compat.v1.placeholder(
@@ -122,19 +121,18 @@ class PPOAgent(BaseAgent):
             shape=[None, ], dtype=tf.float32, name="on_policy_ph")
 
         # Probability distribution
-        logstd = tf.compat.v1.get_variable(
-            name='pi/logstd', shape=(1, self.act_dim[0]),
+        logstd1 = tf.compat.v1.get_variable(
+            name='pi/logstd', shape=(1, self.ac_shape[0]),
             initializer=tf.zeros_initializer)
-        logstd_pik = tf.compat.v1.get_variable(
-            name='pik/logstd_pik', shape=(1, self.act_dim[0]),
+        logstd1_pik = tf.compat.v1.get_variable(
+            name='pik/logstd_pik', shape=(1, self.ac_shape[0]),
             initializer=tf.zeros_initializer)
-        std = tf.exp(logstd)
 
         # Interative with env
         mu1 = self.actor(ob1_ph)
-        dist1 = tfp.distributions.Normal(loc=mu1, scale=std)
+        std1 = tf.exp(logstd1)
+        dist1 = tfp.distributions.Normal(loc=mu1, scale=std1)
         pi1 = dist1.sample()
-        # logp_pi1 = tf.reduce_sum(dist1.log_prob(pi1), axis=1)
         logp_pi1_disc = dist1.log_prob(pi1)
 
         v1 = self.critic(ob1_ph)
@@ -143,18 +141,19 @@ class PPOAgent(BaseAgent):
 
         # Train batch data
         mu = self.actor(obs_ph)
+        logstd = tf.tile(logstd1, (tf.shape(mu)[0], 1))
+        std = tf.exp(logstd)
         dist = tfp.distributions.Normal(loc=mu, scale=std)
-        # logp_a = tf.reduce_sum(dist.log_prob(ac_ph), axis=1)
         logp_a_disc = dist.log_prob(ac_ph)
         entropy = tf.reduce_sum(dist.entropy(), axis=1)
         meanent = tf.reduce_mean(entropy)
 
         mu_pik = tf.stop_gradient(self.actor_pik(obs_ph))
+        logstd_pik = tf.tile(logstd1_pik, (tf.shape(mu_pik)[0], 1))
         std_pik = tf.stop_gradient(tf.exp(logstd_pik))
         dist_pik = tfp.distributions.Normal(loc=mu_pik, scale=std_pik)
         kl = tf.reduce_sum(dist.kl_divergence(dist_pik), axis=1)
         meankl = tf.reduce_mean(kl)
-        # approxkl = 0.5 * tf.reduce_mean(tf.square(logp_pik_ph - logp_a))
 
         v = self.critic(obs_ph)
 
@@ -249,7 +248,7 @@ class PPOAgent(BaseAgent):
 
     def update(self, frac, log2board, step):
         buf_data = self.buffer.vtrace()
-        [obs_all, ac_all, adv_all, ret_all, logp_disc_old_all, v_all, logp_disc_pik_all] = buf_data
+        [obs_all, ac_all, adv_all, ret_all, v_all, logp_disc_old_all, logp_disc_pik_all] = buf_data
         logp_pik_all = np.sum(logp_disc_pik_all, axis=1)
         logp_old_all = np.sum(logp_disc_old_all, axis=1)
         rho_all = np.exp(logp_pik_all - logp_old_all)
@@ -258,14 +257,12 @@ class PPOAgent(BaseAgent):
         absrho_disc_all = np.abs(rho_disc_all - 1) + 1
         absrho_all = np.abs(rho_all - 1) + 1
         n_trajs = rho_disc_all.shape[0] // self.horizon
-        meanabsrho_buf = np.zeros(n_trajs)
 
         filter_inds = np.array([], dtype=np.int64)
         for s in range(n_trajs):
             start = s*self.horizon
             end = (s+1)*self.horizon
-            meanabsrho_buf[s] = np.mean(absrho_disc_all[start:end])
-            if meanabsrho_buf[s] <= 1 + 0.1:
+            if np.mean(absrho_disc_all[start:end]) <= 1 + 0.1:
                 filter_inds = np.concatenate([filter_inds, np.arange(start, end)])
 
         obs_filter = obs_all[filter_inds]
@@ -351,14 +348,14 @@ class PPOAgent(BaseAgent):
                 tv_on_buf.append(tv_on)
                 tv_buf.append(tv)
 
-            tv_inputs = {
-                self.obs_ph: obs_filter,
-                self.ac_ph: ac_filter,
-                self.logp_disc_old_ph: logp_disc_old_filter,
-                self.logp_disc_pik_ph: logp_disc_pik_filter,
-                self.on_policy_ph: on_policy
-            }
-            pi_loss_ctl_all = self.sess.run(self.pi_loss_ctl, feed_dict=tv_inputs)
+            # tv_inputs = {
+            #     self.obs_ph: obs_filter,
+            #     self.ac_ph: ac_filter,
+            #     self.neglogp_disc_old_ph: logp_disc_old_filter,
+            #     self.neglogp_disc_pik_ph: logp_disc_pik_filter,
+            #     self.on_policy_ph: on_policy
+            # }
+            # pi_loss_ctl_all = self.sess.run(self.pi_loss_ctl, feed_dict=tv_inputs)
 
         # if tv_all > self.thresh * 0.5 * self.clip_ratio * 2:
         #     self.lr /= (1 + self.alpha)
@@ -366,9 +363,9 @@ class PPOAgent(BaseAgent):
         #     self.lr *= (1 + self.alpha)
         pi_loss_ctl_mean = np.mean(pi_loss_ctl_buf)
 
-        if pi_loss_ctl_mean > self.target_j * 1.5:
+        if pi_loss_ctl_mean > self.jtarg * 1.5:
             self.alpha *= 2
-        elif pi_loss_ctl_mean < self.target_j / 1.5:
+        elif pi_loss_ctl_mean < self.jtarg / 1.5:
             self.alpha /= 2
         self.alpha = np.clip(self.alpha, 2**(-10), 64)
 
@@ -404,14 +401,13 @@ class PPOAgent(BaseAgent):
     def select_action(self, obs, deterministic=False):
         [mu, pi, v, logp_pi] = self.sess.run(
             self.get_action_ops, feed_dict={self.ob1_ph: obs.reshape(1, -1)})
-        self.extra_info = [v, logp_pi]
         ac = mu if deterministic else pi
-        return pi[0], v[0], logp_pi[0]
+        return pi, v, logp_pi
 
     def compute_v(self, obs):
         v = self.sess.run(
             self.v1, feed_dict={self.ob1_ph: obs.reshape(1, -1)})
-        return v[0]
+        return v
 
     # def store_transition(self, obs, ac, reward, done, raw_obs, raw_rew):
     #     [v, logp_pi] = self.extra_info

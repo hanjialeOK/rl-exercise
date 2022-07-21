@@ -7,14 +7,13 @@ import argparse
 import collections
 import pickle
 
-# from common.cmd_util import make_vec_env
-# from common.vec_env.vec_normalize import VecNormalize
-from common.vec_normalize import VecNormalize2
+from common.cmd_util import make_vec_env
+from common.vec_env.vec_normalize import VecNormalize
+# from common.vec_normalize import VecNormalize2
 # from baselines.common.cmd_util import make_vec_env
 # from baselines.common.vec_env.vec_normalize import VecNormalize
 
 from termcolor import cprint, colored
-from common.serialization_utils import convert_json, save_json
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 # os.environ['TF_DETERMINISTIC_OPS'] = '1'
@@ -86,11 +85,6 @@ def main():
         os.makedirs(base_dir)
     total_steps = int(args.total_steps)
 
-    # Dump config.
-    # locals() can only be put at main(), instead of __main__.
-    # config = convert_json(locals())
-    # save_json(config, base_dir)
-
     # Create dir
     summary_dir = os.path.join(base_dir, "tf1_summary")
     if not os.path.exists(summary_dir):
@@ -105,7 +99,6 @@ def main():
         f2.write('Step\tAvgEpRet\n')
 
     # Random seed
-    # seed = int(time.time()) % 1000
     tf.compat.v1.set_random_seed(args.seed)
     np.random.seed(args.seed)
 
@@ -119,11 +112,12 @@ def main():
     ac_max = float(env.action_space.high[0])
     ac_min = float(env.action_space.low[0])
 
-    # Normalized rew and obs
-    env = VecNormalize2(env)
-    # baselines
-    # env = make_vec_env(args.env, num_env=1, seed=seed)
-    # env = VecNormalize(env)
+    # Our own simple warpper
+    # env = VecNormalize2(env)
+    # Openai baselines
+    env = make_vec_env(args.env, num_env=1, seed=args.seed)
+    env = VecNormalize(env)
+    obs_shape = env.observation_space.shape
 
     # Tensorboard
     summary_writer = tf.compat.v1.summary.FileWriter(summary_dir)
@@ -133,6 +127,8 @@ def main():
         config=tf.compat.v1.ConfigProto(
             gpu_options=gpu_options,
             log_device_placement=False))
+    # Fix save_weights and load_weights for keras.
+    tf.compat.v1.keras.backend.set_session(sess)
 
     # Tensorflow message must be put after sess.
     # DEBUG(0), INFO(1), WARNING(2), ERROR(3)
@@ -176,12 +172,6 @@ def main():
                              gamma=0.995, lam=0.97, fixed_lr=False)
         # 1M // 2048 / 488 = 1
         log_interval = 1
-    elif args.alg == 'PPOV':
-        raise NotImplementedError
-        import pg.agents.ppo2_distv as PPOV
-        agent = PPOV.PPOAgent(sess, obs_shape, ac_shape, horizon=2048)
-        # 1M // 2048 / 488 = 1
-        log_interval = 1
     elif args.alg == 'PPO2':
         import pg.agents.ppo2 as PPO2
         agent = PPO2.PPOAgent(sess, summary_writer, obs_shape, ac_shape, horizon=2048,
@@ -190,7 +180,7 @@ def main():
         log_interval = 1
     elif args.alg == 'DISC':
         import pg.agents.disc as DISC
-        agent = DISC.PPOAgent(sess, summary_writer, env, obs_shape, ac_shape, horizon=2048,
+        agent = DISC.PPOAgent(sess, summary_writer, env, horizon=2048,
                               gamma=0.99, lam=0.95, fixed_lr=False)
         # 1M // 2048 / 488 = 1
         log_interval = 1
@@ -234,7 +224,6 @@ def main():
     # Openai spinningup implementation
     for epoch in range(0, epochs + 1):
         # Clear buffer
-        # agent.buffer.reset()
         for t in range(1, horizon + 1):
             ac, val, logp = agent.select_action(obs)
 
@@ -244,26 +233,27 @@ def main():
             ep_ret += raw_rew
 
             # done = done if ep_len < max_ep_len else False
-            agent.buffer.store(obs, ac, reward, done, raw_obs, raw_rew, val, logp)
+            agent.buffer.store(obs, ac, reward, done, next_obs, val, logp,
+                               raw_obs, raw_rew, next_raw_obs)
 
             obs = next_obs
             raw_obs = next_raw_obs
 
-            terminal = done or ep_len == max_ep_len
-            if terminal or t == horizon:
-                last_val = 0. if done else agent.compute_v(next_obs)
-                agent.buffer.finish_path(next_obs, next_raw_obs, last_val)
-                if terminal:
-                    ep_ret_buf.append(ep_ret)
-                    ep_len_buf.append(ep_len)
-                    obs = env.reset()
-                    raw_obs, _ = env.get_raw()
-                    ep_len = 0
-                    ep_ret = 0.
+            # terminal = done or ep_len == max_ep_len
+            # if terminal or t == horizon:
+                # last_val = 0. if done else agent.compute_v(next_obs)
+                # agent.buffer.finish_path(next_obs, next_raw_obs, last_val)
+            if done:
+                # obs = env.reset()
+                # raw_obs, _ = env.get_raw()
+                ep_ret_buf.append(ep_ret)
+                ep_len_buf.append(ep_len)
+                ep_len = 0
+                ep_ret = 0.
 
-        # Update rms for env
-        [rms_obs, rms_ret] = agent.buffer.get_rms_data()
-        env.update_rms(obs=rms_obs, ret=rms_ret)
+        # Update rms for env. Uncomment this if using your own wrapper.
+        # [rms_obs, rms_ret] = agent.buffer.get_rms_data()
+        # env.update_rms(obs=rms_obs, ret=rms_ret)
 
         if epoch == 0:
             ep_ret_buf.clear()
@@ -271,6 +261,8 @@ def main():
             agent.buffer.reset()
             print('Initialized RMS for env.')
             continue
+
+        agent.buffer.finish_path()
 
         # Progress ratio
         frac = 1.0 - (epoch - 1.0) / epochs
