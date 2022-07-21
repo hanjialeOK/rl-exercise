@@ -35,14 +35,26 @@ do
     CUDA_VISIBLE_DEVICES=0 PYTHONWARNINGS=ignore python run_pg_mujoco.py \
         --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} --total_steps ${STEPS} --seed 2 > /dev/null &
     sleep 5
-    CUDA_VISIBLE_DEVICES=1 PYTHONWARNINGS=ignore python run_pg_mujoco.py \
+    CUDA_VISIBLE_DEVICES=0 PYTHONWARNINGS=ignore python run_pg_mujoco.py \
         --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} --total_steps ${STEPS} --seed 3 > /dev/null &
     sleep 5
-    CUDA_VISIBLE_DEVICES=1 PYTHONWARNINGS=ignore python run_pg_mujoco.py \
+    CUDA_VISIBLE_DEVICES=0 PYTHONWARNINGS=ignore python run_pg_mujoco.py \
         --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} --total_steps ${STEPS} --seed 4 > /dev/null &
     sleep 5
     CUDA_VISIBLE_DEVICES=1 PYTHONWARNINGS=ignore python run_pg_mujoco.py \
         --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} --total_steps ${STEPS} --seed 5 > /dev/null &
+    sleep 5
+    CUDA_VISIBLE_DEVICES=1 PYTHONWARNINGS=ignore python run_pg_mujoco.py \
+        --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} --total_steps ${STEPS} --seed 6 > /dev/null &
+    sleep 5
+    CUDA_VISIBLE_DEVICES=1 PYTHONWARNINGS=ignore python run_pg_mujoco.py \
+        --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} --total_steps ${STEPS} --seed 7 > /dev/null &
+    sleep 5
+    CUDA_VISIBLE_DEVICES=1 PYTHONWARNINGS=ignore python run_pg_mujoco.py \
+        --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} --total_steps ${STEPS} --seed 8 > /dev/null &
+    sleep 5
+    CUDA_VISIBLE_DEVICES=1 PYTHONWARNINGS=ignore python run_pg_mujoco.py \
+        --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} --total_steps ${STEPS} --seed 9 > /dev/null &
     # Waiting for all subprocess finished.
     wait
     sleep 10
