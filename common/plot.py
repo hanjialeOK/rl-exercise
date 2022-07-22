@@ -6,14 +6,16 @@ import os
 import numpy as np
 import argparse
 from matplotlib.ticker import EngFormatter
+import matplotlib.ticker as ticker
 
 DIV_LINE_WIDTH = 50
 
 # Global vars for tracking and labeling data at load time.
 units = dict()
+exp_idx = 0
 
 
-def plot_data(data, xaxis='Step', value="AvgEpRet", condition="Condition", smooth=1, **kwargs):
+def plot_data(data, xaxis='Step', value="AvgEpRet", condition="Condition1", smooth=1, ax=None, **kwargs):
     if smooth > 1:
         """
         smooth data with moving window average.
@@ -31,16 +33,17 @@ def plot_data(data, xaxis='Step', value="AvgEpRet", condition="Condition", smoot
 
     if isinstance(data, list):
         data = pd.concat(data, ignore_index=True)
-    sns.set(style="darkgrid", font_scale=1.8)
     sns.tsplot(data=data, time=xaxis, value=value, unit="Unit", legend=True,
-               condition=condition, ci=50, linewidth=2.5, **kwargs)
+               condition=condition, ci=50, ax=ax, linewidth=2.5, **kwargs)
     """
     If you upgrade to any version of Seaborn greater than 0.8.1, switch from
     tsplot to lineplot replacing L29 with:
         sns.lineplot(data=data, x=xaxis, y=value, hue=condition, ci='sd', **kwargs)
     Changes the colorscheme and the default legend style, though.
     """
-    legend = plt.legend(loc='lower right', frameon=True, fancybox=True)
+    # plt.rcParams["legend.frameon"] = True
+    # legend = plt.legend(loc='lower right', frameon=True, fancybox=True)
+    # legend.set_frame_on(True)
     # legend.get_frame().set_facecolor('C0')
     # plt.legend(loc='upper center', ncol=3, handlelength=1,
     #           borderaxespad=0., prop={'size': 13})
@@ -87,6 +90,7 @@ def get_datasets(logdir, legend=None, tag=None, data_file='progress.txt'):
     Assumes that any file "progress.txt" is a valid hit.
     """
     global units
+    global exp_idx
     datasets = []
     for root, _, files in os.walk(logdir):
         if ('progress.txt' in files) or ('progress.csv' in files):
@@ -98,11 +102,13 @@ def get_datasets(logdir, legend=None, tag=None, data_file='progress.txt'):
                     exp_name = config[tag]
             except:
                 print('No file named config.json')
-            condition = legend or exp_name
-            if condition not in units:
-                units[condition] = 0
-            unit = units[condition]
-            units[condition] += 1
+            condition1 = legend or exp_name
+            condition2 = condition1 + '-' + str(exp_idx)
+            exp_idx += 1
+            if condition1 not in units:
+                units[condition1] = 0
+            unit = units[condition1]
+            units[condition1] += 1
 
             try:
                 if 'progress.txt' in files:
@@ -115,9 +121,10 @@ def get_datasets(logdir, legend=None, tag=None, data_file='progress.txt'):
                       os.path.join(root, data_file))
                 continue
             exp_data.insert(len(exp_data.columns), 'Unit', unit)
-            exp_data.insert(len(exp_data.columns), 'Condition', condition)
+            exp_data.insert(len(exp_data.columns), 'Condition1', condition1)
+            exp_data.insert(len(exp_data.columns), 'Condition2', condition2)
             datasets.append(exp_data)
-    return datasets, condition
+    return datasets, condition1
 
 
 def main(args):
@@ -152,12 +159,20 @@ def main(args):
     print('\n' + '='*DIV_LINE_WIDTH)
     print('Plotting...')
 
-    plt.figure()
-    plot_data(data, xaxis=args.xaxis, value=args.value, condition='Condition',
-              smooth=args.smooth)
-    plt.xlabel('')
-    plt.ylabel('')
-    plt.autoscale()
+    sns.set(style="darkgrid", font_scale=1.8)
+    fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(6.4*1.5, 4.8*1.5))
+    condition = 'Condition2' if args.count else 'Condition1'
+    plot_data(data, xaxis=args.xaxis, value=args.value, condition=condition,
+              smooth=args.smooth, ax=ax)
+    ax.set_xlabel('Steps(M)', labelpad=10)
+    ax.set_ylabel('Average Performance', labelpad=10)
+    def mappingx(x, pos): return (x / 1e6)
+    # ax.xaxis.set_major_formatter(ticker.EngFormatter())
+    ax.xaxis.set_major_formatter(ticker.FuncFormatter(mappingx))
+    ax.legend(loc='best')
+    # ax.set(ylim=(0, 0.03))
+    ax.autoscale()
+
     plt.show()
     plt.savefig(f'{args.name}.pdf')
     print(f"Saved into {os.path.abspath(f'{args.name}.pdf')}")
@@ -178,6 +193,7 @@ if __name__ == "__main__":
     parser.add_argument('--smooth', '-s', type=int, default=1)
     parser.add_argument('--tag', type=str, default='exp_name')
     parser.add_argument('--file', type=str, default='progress.txt')
+    parser.add_argument('--count', action='store_true')
     parser.add_argument('--name', type=str, default='exp')
     args = parser.parse_args()
     main(args)
