@@ -124,7 +124,7 @@ def main():
             gpu_options=gpu_options,
             log_device_placement=False))
     # Fix save_weights and load_weights for keras.
-    tf.compat.v1.keras.backend.set_session(sess)
+    # tf.compat.v1.keras.backend.set_session(sess)
 
     # Tensorflow message must be put after sess.
     # DEBUG(0), INFO(1), WARNING(2), ERROR(3)
@@ -273,8 +273,8 @@ def main():
             avg_ep_ret = np.mean(ep_ret_buf)
             avg_ep_len = np.mean(ep_len_buf)
 
-            logger.logkv("train/update", update)
-            logger.logkv("train/step", step)
+            logger.logkv("train/nupdates", update)
+            logger.logkv("train/timesteps", step)
             logger.logkv("train/avgeplen", avg_ep_len)
             logger.logkv("train/avgepret", avg_ep_ret)
             logger.logkv("loss/avgpiloss", pi_loss)
