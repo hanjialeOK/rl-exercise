@@ -12,9 +12,10 @@ DIV_LINE_WIDTH = 50
 
 # Global vars for tracking and labeling data at load time.
 units = dict()
+exp_idx = 0
 
 
-def plot_data(data, xaxis='Step', value="AvgEpRet", condition="Condition", smooth=1, ax=None, **kwargs):
+def plot_data(data, xaxis='Step', value="AvgEpRet", condition="Condition1", smooth=1, ax=None, **kwargs):
     if smooth > 1:
         """
         smooth data with moving window average.
@@ -34,7 +35,7 @@ def plot_data(data, xaxis='Step', value="AvgEpRet", condition="Condition", smoot
         data = pd.concat(data, ignore_index=True)
     # sns.set(style="darkgrid", palette="deep", font_scale=1.5)
     # ax.margins(0.05)
-    sns.tsplot(data=data, time=xaxis, value=value, unit="Unit", legend=False,
+    sns.tsplot(data=data, time=xaxis, value=value, unit="Unit", legend=True,
                condition=condition, ci=50, ax=ax, linewidth=2.5, **kwargs)
     """
     If you upgrade to any version of Seaborn greater than 0.8.1, switch from
@@ -82,6 +83,7 @@ def get_datasets(logdir, legend=None, tag=None, data_file='progress.txt'):
     Assumes that any file "progress.txt" is a valid hit.
     """
     global units
+    global exp_idx
     datasets = []
     for root, _, files in os.walk(logdir):
         if ('progress.txt' in files) or ('progress.csv' in files):
@@ -93,11 +95,13 @@ def get_datasets(logdir, legend=None, tag=None, data_file='progress.txt'):
                     exp_name = config[tag]
             except:
                 print('No file named config.json')
-            condition = legend or exp_name
-            if condition not in units:
-                units[condition] = 0
-            unit = units[condition]
-            units[condition] += 1
+            condition1 = legend or exp_name
+            condition2 = condition1 + '-' + str(exp_idx)
+            exp_idx += 1
+            if condition1 not in units:
+                units[condition1] = 0
+            unit = units[condition1]
+            units[condition1] += 1
 
             try:
                 if 'progress.txt' in files:
@@ -110,26 +114,27 @@ def get_datasets(logdir, legend=None, tag=None, data_file='progress.txt'):
                       os.path.join(root, data_file))
                 continue
             exp_data.insert(len(exp_data.columns), 'Unit', unit)
-            exp_data.insert(len(exp_data.columns), 'Condition', condition)
+            exp_data.insert(len(exp_data.columns), 'Condition1', condition1)
+            exp_data.insert(len(exp_data.columns), 'Condition2', condition2)
             datasets.append(exp_data)
-    return datasets, condition
+    return datasets, condition1
 
 
 def main(args):
-    envs = ['Ant', 'HalfCheetah', 'Hopper', 'Humanoid', 'HumanoidStandup',
-            'InvertedDoublePendulum', 'InvertedPendulum', 'Reacher', 'Swimmer', 'Walker2d']
-    algs = ['PPO-master-lrdecay', 'PPO-master-lrdecay2']
-    legends = ['PPO-master-lrdecay', 'PPO-master-lrdecay2']
+    envs = ['Ant-v2', 'BipedalWalkerHardcore-v3', 'HalfCheetah-v2', 'Hopper-v2', 'Humanoid-v2', 'HumanoidStandup-v2',
+            'InvertedDoublePendulum-v2', 'InvertedPendulum-v2', 'Swimmer-v2', 'Walker2d-v2']
+    algs = ['DISC_test11', 'DISC_test10']
+    legends = ['DISC seed', 'DISC']
     version = 'v2'
 
     nsize = (2, 5)
 
     sns.set(style="darkgrid", palette="deep", font_scale=1.8)
     fig, axis = plt.subplots(nrows=nsize[0], ncols=nsize[1],
-                             figsize=(6.4*nsize[1], 4.8*nsize[0]*1.2))
+                             figsize=(6.4*nsize[1], 4.8*nsize[0]*1.1))
 
     for i in range(len(envs)):
-        env_name = envs[i] + '-' + version
+        env_name = envs[i]
         base_dir = os.path.join(args.logdir, env_name)
         if not os.path.exists(base_dir):
             raise ValueError(f'No such basedir: {base_dir}')
@@ -164,7 +169,8 @@ def main(args):
         # Choose which subplot to plot
         ax = axis[i // nsize[1], i % nsize[1]]
 
-        plot_data(data, xaxis=args.xaxis, value=args.value, condition='Condition',
+        condition = 'Condition2' if args.count else 'Condition1'
+        plot_data(data, xaxis=args.xaxis, value=args.value, condition=condition,
                   smooth=args.smooth, ax=ax)
 
         ax.set_title(env_name)
@@ -176,12 +182,9 @@ def main(args):
         # ax.xaxis.set_major_formatter(ticker.EngFormatter())
         ax.xaxis.set_major_formatter(ticker.FuncFormatter(mappingx))
 
-        # margin = 1e6 * 0.05
-        # ax.set_xlim(0, 1e6)
-        # ax.set_xlim(0-margin, 1e6+margin)
-        # ax.margins(0.05)
         ax.autoscale()
         ax.set_box_aspect(4.8/6.4)
+        ax.legend(loc='best')
 
     # set labels
     for ax in axis[-1, :]:
@@ -190,16 +193,14 @@ def main(args):
         ax.set_ylabel('Average Performance', labelpad=10)
 
     plt.tight_layout(pad=0.5)
-    lines = fig.axes[-1].get_lines()
-    # for line in lines:
-    #     line.set_linewidth(2.0)
-    handles = [mpatches.Patch(color=line.get_c(), label=legend)
-               for (line, legend) in zip(lines, legends)]
-    fig.legend(handles=handles, loc='lower center', prop={'size': 25},
-               ncol=len(algs), handlelength=1, borderaxespad=0.)
-    # fig.legend(handles=lines, labels=legends, loc='lower center', prop={'size': 20},
-    #            ncol=len(algs), handlelength=2, borderaxespad=0.)
-    plt.subplots_adjust(bottom=0.1)
+    # lines = fig.axes[-1].get_lines()
+    # # for line in lines:
+    # #     line.set_linewidth(2.0)
+    # handles = [mpatches.Patch(color=line.get_c(), label=legend)
+    #            for (line, legend) in zip(lines, legends)]
+    # fig.legend(handles=handles, loc='lower center', prop={'size': 25},
+    #            ncol=len(algs), handlelength=1, borderaxespad=0.)
+    # plt.subplots_adjust(bottom=0.1)
     plt.show()
     plt.savefig('all.pdf')
     plt.savefig('all.svg')
@@ -221,6 +222,7 @@ if __name__ == "__main__":
     parser.add_argument('--smooth', '-s', type=int, default=1)
     parser.add_argument('--tag', type=str, default='exp_name')
     parser.add_argument('--file', type=str, default='progress.txt')
+    parser.add_argument('--count', action='store_true')
     parser.add_argument('--name', type=str, default='exp')
     args = parser.parse_args()
     main(args)
