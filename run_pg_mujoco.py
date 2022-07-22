@@ -12,6 +12,7 @@ from common.vec_env.vec_normalize import VecNormalize
 # from common.vec_normalize import VecNormalize2
 # from baselines.common.cmd_util import make_vec_env
 # from baselines.common.vec_env.vec_normalize import VecNormalize
+from common.logger import Logger
 
 from termcolor import cprint, colored
 
@@ -92,11 +93,9 @@ def main():
     checkpoint_dir = os.path.join(base_dir, 'checkpoints')
     if not os.path.exists(checkpoint_dir):
         os.makedirs(checkpoint_dir)
-    progress_txt = os.path.join(base_dir, 'progress.txt')
-    eval_txt = os.path.join(base_dir, 'eval.txt')
-    with open(progress_txt, 'w') as f1, open(eval_txt, 'w') as f2:
-        f1.write('Step\tAvgEpRet\n')
-        f2.write('Step\tAvgEpRet\n')
+    progress_csv = os.path.join(base_dir, 'progress.csv')
+    summary_writer = tf.compat.v1.summary.FileWriter(summary_dir)
+    logger = Logger(progress_csv, summary_writer)
 
     # Random seed
     tf.compat.v1.set_random_seed(args.seed)
@@ -118,9 +117,6 @@ def main():
     env = make_vec_env(args.env, num_env=1, seed=args.seed)
     env = VecNormalize(env)
     obs_shape = env.observation_space.shape
-
-    # Tensorboard
-    summary_writer = tf.compat.v1.summary.FileWriter(summary_dir)
 
     gpu_options = tf.compat.v1.GPUOptions(allow_growth=True)
     sess = tf.compat.v1.Session(
@@ -220,9 +216,9 @@ def main():
     ep_len = 0
     ep_ret = 0.
 
-    epochs = total_steps // horizon
+    nupdates = total_steps // horizon
     # Openai spinningup implementation
-    for epoch in range(0, epochs + 1):
+    for update in range(0, nupdates + 1):
         # Clear buffer
         for t in range(1, horizon + 1):
             ac, val, logp = agent.select_action(obs)
@@ -255,7 +251,7 @@ def main():
         # [rms_obs, rms_ret] = agent.buffer.get_rms_data()
         # env.update_rms(obs=rms_obs, ret=rms_ret)
 
-        if epoch == 0:
+        if update == 0:
             ep_ret_buf.clear()
             ep_len_buf.clear()
             agent.buffer.reset()
@@ -265,40 +261,32 @@ def main():
         agent.buffer.finish_path()
 
         # Progress ratio
-        frac = 1.0 - (epoch - 1.0) / epochs
+        frac = 1.0 - (update - 1.0) / nupdates
         # Steps we have reached.
-        step = epoch * horizon
+        step = update * horizon
         # Log to board
-        log2board = epoch % log_interval == 0
+        # log2board = update % log_interval == 0
 
-        [pi_loss, vf_loss, ent, kl] = agent.update(frac, log2board, step)
+        [pi_loss, vf_loss, ent, kl] = agent.update(frac, logger)
 
-        if epoch % log_interval == 0:
+        if update % log_interval == 0:
             avg_ep_ret = np.mean(ep_ret_buf)
             avg_ep_len = np.mean(ep_len_buf)
 
-            # Episode summary
-            train_summary = tf.compat.v1.Summary(value=[
-                tf.compat.v1.Summary.Value(
-                    tag="train/avglen", simple_value=avg_ep_len),
-                tf.compat.v1.Summary.Value(
-                    tag="train/avgret", simple_value=avg_ep_ret),
-                tf.compat.v1.Summary.Value(
-                    tag="loss/avgpiloss", simple_value=pi_loss),
-                tf.compat.v1.Summary.Value(
-                    tag="loss/avgvloss", simple_value=vf_loss),
-                tf.compat.v1.Summary.Value(
-                    tag="loss/avgentropy", simple_value=ent),
-                tf.compat.v1.Summary.Value(
-                    tag="loss/avgkl", simple_value=kl)
-            ])
-            summary_writer.add_summary(train_summary, step)
+            logger.logkv("train/update", update)
+            logger.logkv("train/step", step)
+            logger.logkv("train/avgeplen", avg_ep_len)
+            logger.logkv("train/avgepret", avg_ep_ret)
+            logger.logkv("loss/avgpiloss", pi_loss)
+            logger.logkv("loss/avgvfloss", vf_loss)
+            logger.logkv("loss/avgentropy", ent)
+            logger.logkv("loss/avgkl", kl)
 
             log_infos = []
             log_infos.append(f'Env: {args.env} | Alg: {args.alg} | '
                              f'TotalSteps: {total_steps:.1e} | '
                              f'Horizon: {horizon}')
-            log_infos.append(f'Epoch: {epoch}/{epochs}: {epoch/epochs:.1%} | '
+            log_infos.append(f'Update: {update}/{nupdates}: {update/nupdates:.1%} | '
                              f'AvgLen: {avg_ep_len:.1f} | '
                              f'AvgRet: {avg_ep_ret:.1f}')
             log_infos.append(f'pi_loss: {pi_loss:.4f} | '
@@ -313,11 +301,8 @@ def main():
                 print(f"| {info:{max_info_len}s} |")
             print("+" + "-"*n_slashes + "+")
 
-            with open(progress_txt, 'a') as f:
-                f.write(f"{step}\t{avg_ep_ret}\n")
-
         # Evaluate
-        if epoch % 100 == 0 and args.allow_eval:
+        if update % 100 == 0 and args.allow_eval:
             raise NotImplementedError
             avg_ret, evg_len = evaluate(env_eval, agent)
             # Summary
@@ -331,18 +316,20 @@ def main():
             # Save the best weights
             if avg_ret >= max_ep_ret and args.save_model:
                 print(f'Saving weights into {checkpoint_dir}')
-                agent.bundle(checkpoint_dir, epoch)
+                agent.bundle(checkpoint_dir, update)
                 max_ep_ret = avg_ret
             # Log data
             with open(eval_txt, 'a') as f:
                 f.write(f"{step}\t{avg_ret}\n")
+
+        logger.dumpkvs(timestep=step)
 
     time_delta = int(time.time() - start_time)
     m, s = divmod(time_delta, 60)
     h, m = divmod(m, 60)
     print(f'Time taken: {h:d}:{m:02d}:{s:02d}')
     print(f"Results saved into {base_dir}")
-    summary_writer.flush()
+    logger.close()
     env.close()
     env_eval.close()
 

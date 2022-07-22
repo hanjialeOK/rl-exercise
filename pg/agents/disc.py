@@ -246,7 +246,7 @@ class PPOAgent(BaseAgent):
             sync_qt_ops.append(oldv.assign(newv, use_locking=True))
         return sync_qt_ops
 
-    def update(self, frac, log2board, step):
+    def update(self, frac, logger):
         buf_data = self.buffer.vtrace()
         [obs_all, ac_all, adv_all, ret_all, v_all, logp_disc_old_all, logp_disc_pik_all] = buf_data
         logp_pik_all = np.sum(logp_disc_pik_all, axis=1)
@@ -369,29 +369,15 @@ class PPOAgent(BaseAgent):
             self.alpha /= 2
         self.alpha = np.clip(self.alpha, 2**(-10), 64)
 
-        # Here you can add any information you want to log!
-        if log2board:
-            train_summary = tf.compat.v1.Summary(value=[
-                tf.compat.v1.Summary.Value(
-                    tag="loss/gradclipfrac", simple_value=np.mean(gradclipped)),
-                tf.compat.v1.Summary.Value(
-                    tag="loss/lr", simple_value=lr),
-                tf.compat.v1.Summary.Value(
-                    tag="loss/ratio", simple_value=np.mean(ratio_buf)),
-                tf.compat.v1.Summary.Value(
-                    tag="loss/ratioclipfrac", simple_value=np.mean(ratioclipfrac_buf)),
-                tf.compat.v1.Summary.Value(
-                    tag="loss/pi_loss_ctl", simple_value=pi_loss_ctl_mean),
-                tf.compat.v1.Summary.Value(
-                    tag="loss/trajs_active", simple_value=n_trajs_active),
-                tf.compat.v1.Summary.Value(
-                    tag="loss/tv", simple_value=np.mean(tv_buf)),
-                tf.compat.v1.Summary.Value(
-                    tag="loss/tv_on", simple_value=np.mean(tv_on_buf)),
-                tf.compat.v1.Summary.Value(
-                    tag="loss/alpha", simple_value=self.alpha)
-            ])
-            self.summary_writer.add_summary(train_summary, step)
+        logger.logkv("loss/gradclipfrac", np.mean(gradclipped))
+        logger.logkv("loss/lr", lr)
+        logger.logkv("loss/ratio", np.mean(ratio_buf))
+        logger.logkv("loss/ratioclipfrac", np.mean(ratioclipfrac_buf))
+        logger.logkv("loss/pi_loss_ctl", pi_loss_ctl_mean)
+        logger.logkv("loss/trajs_active", n_trajs_active)
+        logger.logkv("loss/tv", np.mean(tv_buf))
+        logger.logkv("loss/tv_on", np.mean(tv_on_buf))
+        logger.logkv("loss/alpha", self.alpha)
 
         self.buffer.update()
 
