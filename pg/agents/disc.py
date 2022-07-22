@@ -256,14 +256,18 @@ class PPOAgent(BaseAgent):
 
         absrho_disc_all = np.abs(rho_disc_all - 1) + 1
         absrho_all = np.abs(rho_all - 1) + 1
-        n_trajs = rho_disc_all.shape[0] // self.horizon
+        n_oldtrajs = rho_disc_all.shape[0] // self.horizon - 1
 
         filter_inds = np.array([], dtype=np.int64)
-        for s in range(n_trajs):
+        # Filter old trajs
+        for s in range(n_oldtrajs):
             start = s*self.horizon
             end = (s+1)*self.horizon
             if np.mean(absrho_disc_all[start:end]) <= 1 + 0.1:
                 filter_inds = np.concatenate([filter_inds, np.arange(start, end)])
+        # Add the latest traj
+        piktraj_inds = np.arange(obs_all.shape[0])[-self.horizon:]
+        filter_inds = np.concatenate([filter_inds, piktraj_inds])
 
         obs_filter = obs_all[filter_inds]
         ac_filter = ac_all[filter_inds]
@@ -276,7 +280,7 @@ class PPOAgent(BaseAgent):
 
         n_trajs_active = obs_filter.shape[0] // self.horizon
 
-        on_policy = np.zeros_like(adv_filter)
+        on_policy = np.zeros(obs_filter.shape[0])
         on_policy[-self.horizon:] = n_trajs_active
 
         lr = self.lr if self.fixed_lr else np.maximum(self.lr * frac, 1e-4)
@@ -294,22 +298,21 @@ class PPOAgent(BaseAgent):
 
         self.sess.run(self.sync_op)
 
-        length = obs_filter.shape[0]
-        minibatch = length // self.nminibatches
-        indices = np.arange(length)
+        active_length = obs_filter.shape[0]
+        indices = np.arange(active_length)
+        minibatch_off = (active_length - self.horizon) // self.nminibatches
+        minibatch_on = self.horizon // self.nminibatches
         for _ in range(self.train_iters):
             # Randomize the indexes
             # np.random.shuffle(indices)
             # 0 to batch_size with batch_train_size step
             # for start in range(0, length, minibatch):
             for _ in range(self.nminibatches):
-                minibatch_on = self.horizon // self.nminibatches
-                idx_on = np.random.choice(indices[-self.horizon:], minibatch_on)
-                if length > self.horizon:
-                    minibatch_off = (length - self.horizon) // self.nminibatches
+                if minibatch_off > 0:
                     idx_off = np.random.choice(indices[:-self.horizon], minibatch_off)
                 else:
                     idx_off = []
+                idx_on = np.random.choice(indices[-self.horizon:], minibatch_on)
                 mbinds = np.concatenate([idx_off, idx_on]).astype(np.int64)
                 advs = adv_filter[mbinds]
                 rhos = rho_filter[mbinds]
