@@ -377,31 +377,3 @@ class DISCBuffer:
         self.ptr = self.max_size - self.horizon
         self.path_start_idx = self.ptr
         self.count = 0
-
-class TRPOBuffer(GAEBuffer):
-    def __init__(self, obs_shape, ac_shape, size, gamma=0.99, lam=0.95):
-        self.mu_buf = np.zeros((size,) + ac_shape, dtype=np.float32)
-        self.logstd_buf = np.zeros((1,) + ac_shape, dtype=np.float32)
-        super().__init__(obs_shape=obs_shape, ac_shape=ac_shape, size=size,
-                         gamma=gamma, lam=lam)
-
-    def store(self, obs, ac, rew, done, val, logp, mu, logstd):
-        assert mu.shape == self.ac_shape
-        assert logstd.shape == self.ac_shape
-        self.mu_buf[self.ptr] = mu
-        self.logstd_buf[0] = logstd
-        super().store(obs, ac, rew, done, val, logp)
-
-    def finish_path(self, last_val=None):
-        super().finish_path(last_val=last_val)
-
-    def get(self):
-        assert self.ptr == self.max_size
-        return [self.obs_buf,
-                self.ac_buf,
-                self.adv_buf,
-                self.ret_buf,
-                self.logp_buf,
-                self.val_buf[:-1],
-                self.mu_buf,
-                self.logstd_buf]
