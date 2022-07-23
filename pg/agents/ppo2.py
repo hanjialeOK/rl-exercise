@@ -196,7 +196,7 @@ class PPOAgent(BaseAgent):
 
     def update(self, frac, logger):
         buf_data = self.buffer.get()
-        [obs_all, ac_all, adv_all, ret_all, logp_all, val_all] = buf_data
+        [obs_all, ac_all, adv_all, ret_all, val_all, logp_all] = buf_data
         assert obs_all.shape[0] == self.horizon
 
         lr = self.lr if self.fixed_lr else self.lr * frac
