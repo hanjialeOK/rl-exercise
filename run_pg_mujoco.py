@@ -170,7 +170,7 @@ def main():
         log_interval = 1
     elif args.alg == 'PPO2':
         import pg.agents.ppo2 as PPO2
-        agent = PPO2.PPOAgent(sess, summary_writer, obs_shape, ac_shape, horizon=2048,
+        agent = PPO2.PPOAgent(sess, summary_writer, env, horizon=2048,
                               gamma=0.99, lam=0.95, fixed_lr=False)
         # 1M // 2048 / 488 = 1
         log_interval = 1
@@ -235,17 +235,16 @@ def main():
             obs = next_obs
             raw_obs = next_raw_obs
 
-            # terminal = done or ep_len == max_ep_len
-            # if terminal or t == horizon:
-                # last_val = 0. if done else agent.compute_v(next_obs)
-                # agent.buffer.finish_path(next_obs, next_raw_obs, last_val)
-            if done:
-                # obs = env.reset()
-                # raw_obs, _ = env.get_raw()
-                ep_ret_buf.append(ep_ret)
-                ep_len_buf.append(ep_len)
-                ep_len = 0
-                ep_ret = 0.
+            terminal = done or ep_len == max_ep_len
+            if terminal or t == horizon:
+                agent.buffer.finish_path()
+                if terminal:
+                    # obs = env.reset()
+                    # raw_obs, _ = env.get_raw()
+                    ep_ret_buf.append(ep_ret)
+                    ep_len_buf.append(ep_len)
+                    ep_len = 0
+                    ep_ret = 0.
 
         # Update rms for env. Uncomment this if using your own wrapper.
         # [rms_obs, rms_ret] = agent.buffer.get_rms_data()
@@ -257,8 +256,6 @@ def main():
             agent.buffer.reset()
             print('Initialized RMS for env.')
             continue
-
-        agent.buffer.finish_path()
 
         # Progress ratio
         frac = 1.0 - (update - 1.0) / nupdates

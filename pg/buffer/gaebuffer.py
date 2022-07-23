@@ -1,5 +1,4 @@
 import numpy as np
-import scipy.signal
 
 
 class GAEBuffer:
@@ -7,13 +6,18 @@ class GAEBuffer:
     Openai spinningup implementation
     '''
 
-    def __init__(self, obs_shape, ac_shape, horizon, gamma=0.99, lam=0.95):
-        self.obs_buf = np.zeros((horizon, ) + obs_shape, dtype=np.float64)
-        self.ac_buf = np.zeros((horizon, ) + ac_shape, dtype=np.float32)
-        self.adv_buf = np.zeros((horizon, ), dtype=np.float32)
+    def __init__(self, env, horizon, gamma=0.99, lam=0.95, compute_v=None):
+        obs_shape = env.observation_space.shape
+        ac_shape = env.action_space.shape
+        obs_dtype = env.observation_space.dtype.name
+        ac_dtype = env.action_space.dtype.name
+        self.obs_buf = np.zeros((horizon, ) + obs_shape, dtype=obs_dtype)
+        self.obs2_buf = np.zeros((horizon, ) + obs_shape, dtype=obs_dtype)
+        self.ac_buf = np.zeros((horizon, ) + ac_shape, dtype=ac_dtype)
         self.rew_buf = np.zeros((horizon, ), dtype=np.float32)
         self.done_buf = np.zeros((horizon, ), dtype=np.float32)
         self.ret_buf = np.zeros((horizon, ), dtype=np.float32)
+        self.adv_buf = np.zeros((horizon, ), dtype=np.float32)
         self.val_buf = np.zeros((horizon, ), dtype=np.float32)
         self.next_val_buf = np.zeros((horizon, ), dtype=np.float32)
         self.logp_buf = np.zeros((horizon, ), dtype=np.float32)
@@ -23,13 +27,15 @@ class GAEBuffer:
         self.gamma = gamma
         self.lam = lam
         self.ptr = 0
-        self.path_start_idx = 0
+        self.path_start_idx = self.ptr
+        self.compute_v = compute_v
 
-    def store(self, obs, ac, rew, done, raw_obs, raw_rew, val, logp):
+    def store(self, obs, ac, rew, done, obs2, val, logp, *args):
         assert self.ptr < self.max_size
-        assert obs.shape == self.obs_shape
-        assert ac.shape == self.ac_shape
+        # assert obs.shape == self.obs_shape
+        # assert ac.shape == self.ac_shape
         self.obs_buf[self.ptr] = obs
+        self.obs2_buf[self.ptr] = obs2
         self.ac_buf[self.ptr] = ac
         self.rew_buf[self.ptr] = rew
         self.done_buf[self.ptr] = done
@@ -37,9 +43,14 @@ class GAEBuffer:
         self.logp_buf[self.ptr] = logp
         self.ptr += 1
 
-    def finish_path(self, last_ob=None, last_raw_ob=None, last_val=None):
+    def finish_path(self):
         start = self.path_start_idx
+
         self.next_val_buf[start:self.ptr-1] = self.val_buf[start+1:self.ptr]
+
+        last_done = self.done_buf[self.ptr-1]
+        last_ob2 = self.obs2_buf[self.ptr-1]
+        last_val = 0. if last_done else self.compute_v(last_ob2)
         self.next_val_buf[self.ptr-1] = last_val
 
         # GAE-Lambda advantage calculation
@@ -61,7 +72,7 @@ class GAEBuffer:
 
         # Reset ptr
         self.ptr = 0
-        self.path_start_idx = 0
+        self.path_start_idx = self.ptr
 
         return [self.obs_buf,
                 self.ac_buf,
@@ -77,7 +88,7 @@ class GAEBuffer:
 
     def reset(self):
         self.ptr = 0
-        self.path_start_idx = 0
+        self.path_start_idx = self.ptr
 
 
 class GAEVBuffer:
@@ -242,14 +253,14 @@ class DISCBuffer:
                  compute_v_pik=None, compute_logp_pik=None):
         obs_shape = env.observation_space.shape
         ac_shape = env.action_space.shape
-        obsdtype = env.observation_space.dtype.name
-        acdtype = env.action_space.dtype.name
+        obs_dtype = env.observation_space.dtype.name
+        ac_dtype = env.action_space.dtype.name
         max_size = horizon * nlatest
-        self.obs_buf = np.zeros((max_size, ) + obs_shape, dtype=obsdtype)
-        self.obs2_buf = np.zeros((max_size, ) + obs_shape, dtype=obsdtype)
-        self.raw_obs_buf = np.zeros((max_size, ) + obs_shape, dtype=obsdtype)
-        self.raw_obs2_buf = np.zeros((max_size, ) + obs_shape, dtype=obsdtype)
-        self.ac_buf = np.zeros((max_size, ) + ac_shape, dtype=acdtype)
+        self.obs_buf = np.zeros((max_size, ) + obs_shape, dtype=obs_dtype)
+        self.obs2_buf = np.zeros((max_size, ) + obs_shape, dtype=obs_dtype)
+        self.raw_obs_buf = np.zeros((max_size, ) + obs_shape, dtype=obs_dtype)
+        self.raw_obs2_buf = np.zeros((max_size, ) + obs_shape, dtype=obs_dtype)
+        self.ac_buf = np.zeros((max_size, ) + ac_shape, dtype=ac_dtype)
         self.rew_buf = np.zeros((max_size, ), dtype=np.float32)
         self.raw_rew_buf = np.zeros((max_size, ), dtype=np.float32)
         self.done_buf = np.zeros((max_size, ), dtype=np.float32)
