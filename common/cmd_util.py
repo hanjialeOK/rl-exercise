@@ -31,8 +31,8 @@ def make_vec_env(env_id, num_env, seed,
                 os.makedirs(monitor_dir, exist_ok=True)
             env = Monitor(env, filename=monitor_path, allow_early_resets=True)
             # Optionally, wrap the environment with the provided wrapper
-            # if isinstance(env.action_space, gym.spaces.Box):
-            #     env = ClipActionsWrapper(env)
+            if isinstance(env.action_space, gym.spaces.Box):
+                env = ClipActionsWrapper(env)
             return env
         return _init
 
