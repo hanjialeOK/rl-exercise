@@ -188,7 +188,7 @@ def main():
         log_interval = 1
     elif args.alg == 'GePPO':
         import pg.agents.geppo as GePPO
-        agent = GePPO.PPOAgent(sess, summary_writer, obs_shape, ac_shape, horizon=1024,
+        agent = GePPO.PPOAgent(sess, summary_writer, env, horizon=1024,
                                gamma=0.99, lam=0.95, fixed_lr=False, uniform=False)
         # 1M // 2048 / 488 = 1
         log_interval = 2
@@ -298,6 +298,8 @@ def main():
                 print(f"| {info:{max_info_len}s} |")
             print("+" + "-"*n_slashes + "+")
 
+            logger.dumpkvs(timestep=step)
+
         # Evaluate
         if update % 100 == 0 and args.allow_eval:
             raise NotImplementedError
@@ -318,8 +320,6 @@ def main():
             # Log data
             with open(eval_txt, 'a') as f:
                 f.write(f"{step}\t{avg_ret}\n")
-
-        logger.dumpkvs(timestep=step)
 
     time_delta = int(time.time() - start_time)
     m, s = divmod(time_delta, 60)
