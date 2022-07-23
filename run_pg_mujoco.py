@@ -60,7 +60,7 @@ def main():
     parser.add_argument('--env', type=str,
                         default='Walker2d-v2')
     parser.add_argument('--alg', type=str, default='PPO',
-                        choices=['A2C', 'VPG', 'TRPO', 'TRPO2',
+                        choices=['A2C', 'VPG', 'TRPO',
                                  'PPO', 'PPO2', 'DISC', 'GePPO', 'GeDISC'],
                         help='Experiment name')
     parser.add_argument('--allow_eval', action='store_true',
@@ -154,12 +154,6 @@ def main():
         import pg.agents.trpo as TRPO
         agent = TRPO.TRPOAgent(sess, obs_shape, ac_shape, horizon=1024,
                                gamma=0.995, lam=0.97, cg_iters=10)
-        # 1M // 1024 / 488 = 1
-        log_interval = 2
-    elif args.alg == 'TRPO2':
-        import pg.agents.trpo2 as TRPO2
-        agent = TRPO2.TRPOAgent(sess, obs_shape, ac_shape, horizon=1024,
-                                gamma=0.995, lam=0.97, cg_iters=10)
         # 1M // 1024 / 488 = 1
         log_interval = 2
     elif args.alg == 'PPO':
