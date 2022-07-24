@@ -106,12 +106,12 @@ class PPOAgent(BaseAgent):
             shape=[None, ], dtype=tf.float32, name="adv_ph")
         self.ret_ph = ret_ph = tf.compat.v1.placeholder(
             shape=[None, ], dtype=tf.float32, name="ret_ph")
+        self.val_ph = val_ph = tf.compat.v1.placeholder(
+            shape=[None, ], dtype=tf.float32, name="val_ph")
         self.neglogp_dw_old_ph = neglogp_dw_old_ph = tf.compat.v1.placeholder(
             shape=(None, ) + self.ac_shape, dtype=tf.float32, name="neglogp_dw_old_ph")
         self.neglogp_dw_pik_ph = neglogp_dw_pik_ph = tf.compat.v1.placeholder(
             shape=(None, ) + self.ac_shape, dtype=tf.float32, name="neglogp_dw_pik_ph")
-        self.val_ph = val_ph = tf.compat.v1.placeholder(
-            shape=[None, ], dtype=tf.float32, name="val_ph")
         self.lr_ph = lr_ph = tf.compat.v1.placeholder(
             shape=[], dtype=tf.float32, name="lr_ph")
         self.alpha_ph = alpha_ph = tf.compat.v1.placeholder(
