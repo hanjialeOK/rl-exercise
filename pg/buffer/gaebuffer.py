@@ -20,7 +20,7 @@ class GAEBuffer:
         self.adv_buf = np.zeros((horizon, ), dtype=np.float32)
         self.val_buf = np.zeros((horizon, ), dtype=np.float32)
         self.next_val_buf = np.zeros((horizon, ), dtype=np.float32)
-        self.logp_buf = np.zeros((horizon, ), dtype=np.float32)
+        self.neglogp_buf = np.zeros((horizon, ), dtype=np.float32)
         self.obs_shape = obs_shape
         self.ac_shape = ac_shape
         self.max_size = horizon
@@ -30,7 +30,7 @@ class GAEBuffer:
         self.path_start_idx = self.ptr
         self.compute_v = compute_v
 
-    def store(self, obs, ac, rew, done, obs2, val, logp, *args):
+    def store(self, obs, ac, rew, done, obs2, val, neglogp, *args):
         assert self.ptr < self.max_size
         # assert obs.shape == self.obs_shape
         # assert ac.shape == self.ac_shape
@@ -40,7 +40,7 @@ class GAEBuffer:
         self.rew_buf[self.ptr] = rew
         self.done_buf[self.ptr] = done
         self.val_buf[self.ptr] = val
-        self.logp_buf[self.ptr] = logp
+        self.neglogp_buf[self.ptr] = neglogp
         self.ptr += 1
 
     def finish_path(self):
@@ -79,7 +79,7 @@ class GAEBuffer:
                 self.adv_buf,
                 self.ret_buf,
                 self.val_buf,
-                self.logp_buf]
+                self.neglogp_buf]
 
     def get_rms_data(self):
         assert self.ptr == self.max_size
@@ -97,7 +97,7 @@ class GAEVBuffer:
     '''
 
     def __init__(self, env, horizon, nlatest=1, gamma=0.99, lam=0.95,
-                 compute_v_pik=None, compute_logp_pik=None):
+                 compute_v_pik=None, compute_neglogp_pik=None):
         obs_shape = env.observation_space.shape
         ac_shape = env.action_space.shape
         obs_dtype = env.observation_space.dtype.name
@@ -116,8 +116,8 @@ class GAEVBuffer:
         self.adv_buf = np.zeros((max_size, ), dtype=np.float32)
         self.val_buf = np.zeros((max_size, ), dtype=np.float32)
         self.next_val_buf = np.zeros((max_size, ), dtype=np.float32)
-        self.logp_buf = np.zeros((max_size, ), dtype=np.float32)
-        self.logp_pik_buf = np.zeros((max_size, ), dtype=np.float32)
+        self.neglogp_buf = np.zeros((max_size, ), dtype=np.float32)
+        self.neglogp_pik_buf = np.zeros((max_size, ), dtype=np.float32)
         self.obs_shape = obs_shape
         self.ac_shape = ac_shape
         self.max_size = max_size
@@ -131,9 +131,9 @@ class GAEVBuffer:
         self.obfilt = env._obfilt
         self.rewfilt = env._rewfilt
         self.compute_v_pik = compute_v_pik
-        self.compute_logp_pik = compute_logp_pik
+        self.compute_neglogp_pik = compute_neglogp_pik
 
-    def store(self, obs, ac, rew, done, obs2, val, logp, raw_obs, raw_rew, raw_obs2):
+    def store(self, obs, ac, rew, done, obs2, val, neglogp, raw_obs, raw_rew, raw_obs2):
         assert self.ptr < self.max_size
         # assert obs.shape == self.obs_shape
         # assert raw_obs.shape == self.obs_shape
@@ -148,7 +148,7 @@ class GAEVBuffer:
         self.raw_obs2_buf[self.ptr] = raw_obs2
         self.raw_rew_buf[self.ptr] = raw_rew
         self.val_buf[self.ptr] = val
-        self.logp_buf[self.ptr] = logp
+        self.neglogp_buf[self.ptr] = neglogp
         self.ptr += 1
         self.count = min(self.count+1, self.max_size)
 
@@ -169,9 +169,9 @@ class GAEVBuffer:
 
         self.val_buf[:] = self.compute_v_pik(self.obs_buf)
         self.next_val_buf[:] = self.compute_v_pik(self.obs2_buf)
-        self.logp_pik_buf[:] = self.compute_logp_pik(self.obs_buf, self.ac_buf)
+        self.neglogp_pik_buf[:] = self.compute_neglogp_pik(self.obs_buf, self.ac_buf)
 
-        rho = np.exp(self.logp_pik_buf - self.logp_buf)
+        rho = np.exp(self.neglogp_buf - self.neglogp_pik_buf)
         # Reduce bias here!
         rho = np.minimum(rho, 1.0)
 
@@ -195,8 +195,8 @@ class GAEVBuffer:
                 self.adv_buf[-self.count:],
                 self.ret_buf[-self.count:],
                 self.val_buf[-self.count:],
-                self.logp_buf[-self.count:],
-                self.logp_pik_buf[-self.count:]]
+                self.neglogp_buf[-self.count:],
+                self.neglogp_pik_buf[-self.count:]]
 
     def update(self):
         tail = self.max_size - self.horizon
@@ -213,8 +213,8 @@ class GAEVBuffer:
         # self.adv_buf[:tail] = self.adv_buf[head:]
         # self.val_buf[:tail] = self.val_buf[head:]
         # self.next_val_buf[:tail] = self.next_val_buf[head:]
-        self.logp_buf[:tail] = self.logp_buf[head:]
-        # self.logp_pik_buf[:tail] = self.logp_pik_buf[head:]
+        self.neglogp_buf[:tail] = self.neglogp_buf[head:]
+        # self.neglogp_pik_buf[:tail] = self.neglogp_pik_buf[head:]
         if self.obfilt:
             self.raw_obs_buf[:tail] = self.raw_obs_buf[head:]
             self.raw_obs2_buf[:tail] = self.raw_obs2_buf[head:]
@@ -239,7 +239,7 @@ class DISCBuffer:
     '''
 
     def __init__(self, env, horizon, nlatest=1, gamma=0.99, lam=0.95,
-                 compute_v_pik=None, compute_logp_pik=None):
+                 compute_v_pik=None, compute_neglogp_pik=None):
         obs_shape = env.observation_space.shape
         ac_shape = env.action_space.shape
         obs_dtype = env.observation_space.dtype.name
@@ -258,8 +258,8 @@ class DISCBuffer:
         self.adv_buf = np.zeros((max_size, ), dtype=np.float32)
         self.val_buf = np.zeros((max_size, ), dtype=np.float32)
         self.next_val_buf = np.zeros((max_size, ), dtype=np.float32)
-        self.logp_disc_buf = np.zeros((max_size, ) + ac_shape, dtype=np.float32)
-        self.logp_disc_pik_buf = np.zeros((max_size, ) + ac_shape, dtype=np.float32)
+        self.neglogp_dw_buf = np.zeros((max_size, ) + ac_shape, dtype=np.float32)
+        self.neglogp_dw_pik_buf = np.zeros((max_size, ) + ac_shape, dtype=np.float32)
         self.obs_shape = obs_shape
         self.ac_shape = ac_shape
         self.max_size = max_size
@@ -273,9 +273,9 @@ class DISCBuffer:
         self.obfilt = env._obfilt
         self.rewfilt = env._rewfilt
         self.compute_v_pik = compute_v_pik
-        self.compute_logp_pik = compute_logp_pik
+        self.compute_neglogp_pik = compute_neglogp_pik
 
-    def store(self, obs, ac, rew, done, obs2, val, logp, raw_obs, raw_rew, raw_obs2):
+    def store(self, obs, ac, rew, done, obs2, val, neglogp, raw_obs, raw_rew, raw_obs2):
         assert self.ptr < self.max_size
         # assert obs.shape == self.obs_shape
         # assert raw_obs.shape == self.obs_shape
@@ -291,7 +291,7 @@ class DISCBuffer:
         self.raw_obs2_buf[self.ptr] = raw_obs2
         self.raw_rew_buf[self.ptr] = raw_rew
         self.val_buf[self.ptr] = val
-        self.logp_disc_buf[self.ptr] = logp
+        self.neglogp_dw_buf[self.ptr] = neglogp
         self.ptr += 1
         self.count = min(self.count+1, self.max_size)
 
@@ -312,12 +312,12 @@ class DISCBuffer:
 
         self.val_buf[:] = self.compute_v_pik(self.obs_buf)
         self.next_val_buf[:] = self.compute_v_pik(self.obs2_buf)
-        self.logp_disc_pik_buf[:] = self.compute_logp_pik(self.obs_buf, self.ac_buf)
+        self.neglogp_dw_pik_buf[:] = self.compute_neglogp_pik(self.obs_buf, self.ac_buf)
 
-        logp_pik = np.sum(self.logp_disc_pik_buf, axis=1)
-        logp_old = np.sum(self.logp_disc_buf, axis=1)
+        neglogp_pik = np.sum(self.neglogp_dw_pik_buf, axis=1)
+        neglogp_old = np.sum(self.neglogp_dw_buf, axis=1)
 
-        rho_ = np.exp(logp_pik - logp_old)
+        rho_ = np.exp(neglogp_old - neglogp_pik)
         # Reduce bias here!
         rho = np.minimum(rho_, 1.0)
 
@@ -341,8 +341,8 @@ class DISCBuffer:
                 self.adv_buf[-self.count:],
                 self.ret_buf[-self.count:],
                 self.val_buf[-self.count:],
-                self.logp_disc_buf[-self.count:],
-                self.logp_disc_pik_buf[-self.count:]]
+                self.neglogp_dw_buf[-self.count:],
+                self.neglogp_dw_pik_buf[-self.count:]]
 
     def update(self):
         tail = self.max_size - self.horizon
@@ -359,8 +359,8 @@ class DISCBuffer:
         # self.adv_buf[:tail] = self.adv_buf[head:]
         # self.val_buf[:tail] = self.val_buf[head:]
         # self.next_val_buf[:tail] = self.next_val_buf[head:]
-        self.logp_disc_buf[:tail] = self.logp_disc_buf[head:]
-        # self.logp_pik_buf[:tail] = self.logp_pik_buf[head:]
+        self.neglogp_dw_buf[:tail] = self.neglogp_dw_buf[head:]
+        # self.neglogp_pik_buf[:tail] = self.neglogp_pik_buf[head:]
         if self.obfilt:
             self.raw_obs_buf[:tail] = self.raw_obs_buf[head:]
             self.raw_obs2_buf[:tail] = self.raw_obs2_buf[head:]

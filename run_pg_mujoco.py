@@ -17,7 +17,6 @@ from common.logger import Logger
 from termcolor import cprint, colored
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-# os.environ['TF_DETERMINISTIC_OPS'] = '1'
 
 
 def evaluate(env_eval, agent, n_eval_episodes=10):
@@ -59,7 +58,7 @@ def main():
                         help='Data disk dir')
     parser.add_argument('--env', type=str,
                         default='Walker2d-v2')
-    parser.add_argument('--alg', type=str, default='PPO',
+    parser.add_argument('--alg', type=str, default='PPO2',
                         choices=['A2C', 'VPG', 'TRPO',
                                  'PPO', 'PPO2', 'DISC', 'GePPO', 'GeDISC'],
                         help='Experiment name')
@@ -164,25 +163,25 @@ def main():
         log_interval = 1
     elif args.alg == 'PPO2':
         import pg.agents.ppo2 as PPO2
-        agent = PPO2.PPOAgent(sess, summary_writer, env, horizon=2048,
+        agent = PPO2.PPOAgent(sess, env, horizon=2048,
                               gamma=0.99, lam=0.95, fixed_lr=False)
         # 1M // 2048 / 488 = 1
         log_interval = 1
     elif args.alg == 'DISC':
         import pg.agents.disc as DISC
-        agent = DISC.PPOAgent(sess, summary_writer, env, horizon=2048,
+        agent = DISC.PPOAgent(sess, env, horizon=2048,
                               gamma=0.99, lam=0.95, fixed_lr=False)
         # 1M // 2048 / 488 = 1
         log_interval = 1
     elif args.alg == 'GeDISC':
         import pg.agents.gedisc as GeDISC
-        agent = GeDISC.PPOAgent(sess, summary_writer, env, obs_shape, ac_shape, horizon=2048,
+        agent = GeDISC.PPOAgent(sess, env, horizon=2048,
                                 gamma=0.99, lam=0.95, fixed_lr=False, uniform=True)
         # 1M // 2048 / 488 = 1
         log_interval = 1
     elif args.alg == 'GePPO':
         import pg.agents.geppo as GePPO
-        agent = GePPO.PPOAgent(sess, summary_writer, env, horizon=1024,
+        agent = GePPO.PPOAgent(sess, env, horizon=1024,
                                gamma=0.99, lam=0.95, fixed_lr=False, uniform=False)
         # 1M // 2048 / 488 = 1
         log_interval = 2
@@ -190,6 +189,13 @@ def main():
         raise ValueError('Unknown agent: {}'.format(args.alg))
 
     sess.run(tf.compat.v1.global_variables_initializer())
+
+    # with open('/data/hanjl/debug_data4/actor_param.pkl', 'rb') as f:
+    #     actor_param = pickle.load(f)
+    #     agent.assign_actor_weights(actor_param)
+    # with open('/data/hanjl/debug_data4/critic_param.pkl', 'rb') as f:
+    #     critic_param = pickle.load(f)
+    #     agent.assign_critic_weights(critic_param)
 
     # Params
     horizon = agent.horizon
@@ -215,7 +221,7 @@ def main():
     for update in range(0, nupdates + 1):
         # Clear buffer
         for t in range(1, horizon + 1):
-            ac, val, logp = agent.select_action(obs)
+            ac, val, neglogp = agent.select_action(obs)
 
             next_obs, reward, done, info = env.step(ac)
             next_raw_obs, raw_rew = env.get_raw()
@@ -223,7 +229,7 @@ def main():
             ep_ret += raw_rew
 
             # done = done if ep_len < max_ep_len else False
-            agent.buffer.store(obs, ac, reward, done, next_obs, val, logp,
+            agent.buffer.store(obs, ac, reward, done, next_obs, val, neglogp,
                                raw_obs, raw_rew, next_raw_obs)
 
             obs = next_obs
