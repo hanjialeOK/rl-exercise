@@ -90,6 +90,7 @@ class PPOAgent(BaseAgent):
             compute_v_pik=self.compute_v_pik, compute_neglogp_pik=self.compute_neglogp_pik)
         self._build_network()
         self._build_train_op()
+        self.sync_op = self._build_sync_op()
         super().__init__()
 
     def _build_network(self):
