@@ -2,6 +2,7 @@ import numpy as np
 import tensorflow as tf
 import gym
 import time
+import random
 import os
 import argparse
 import collections
@@ -99,6 +100,7 @@ def main():
     # Random seed
     tf.compat.v1.set_random_seed(args.seed)
     np.random.seed(args.seed)
+    random.seed(args.seed)
 
     # Environment
     env = gym.make(args.env)
