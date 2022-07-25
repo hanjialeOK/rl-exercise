@@ -117,7 +117,6 @@ def main():
     # Openai baselines
     env = make_vec_env(args.env, num_env=1, seed=args.seed)
     env = VecNormalize(env)
-    obs_shape = env.observation_space.shape
 
     gpu_options = tf.compat.v1.GPUOptions(allow_growth=True)
     sess = tf.compat.v1.Session(
@@ -190,6 +189,8 @@ def main():
     else:
         raise ValueError('Unknown agent: {}'.format(args.alg))
 
+    # Actually, we won't use save_weights because it does not contain logstd.
+    tf.compat.v1.keras.backend.set_session(sess)
     sess.run(tf.compat.v1.global_variables_initializer())
 
     # with open('/data/hanjl/debug_data4/actor_param.pkl', 'rb') as f:
@@ -263,8 +264,6 @@ def main():
         frac = 1.0 - (update - 1.0) / nupdates
         # Steps we have reached.
         step = update * horizon
-        # Log to board
-        # log2board = update % log_interval == 0
 
         [pi_loss, vf_loss, ent, kl] = agent.update(frac, logger)
 
