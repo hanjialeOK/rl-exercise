@@ -60,7 +60,7 @@ def main():
     parser.add_argument('--env', type=str,
                         default='Walker2d-v2')
     parser.add_argument('--alg', type=str, default='PPO2',
-                        choices=['A2C', 'VPG', 'TRPO',
+                        choices=['A2C', 'VPG', 'TRPO', 'DISDC',
                                  'PPO', 'PPO2', 'DISC', 'GePPO', 'GeDISC'],
                         help='Experiment name')
     parser.add_argument('--allow_eval', action='store_true',
@@ -171,6 +171,12 @@ def main():
     elif args.alg == 'DISC':
         import pg.agents.disc as DISC
         agent = DISC.PPOAgent(sess, env, horizon=2048,
+                              gamma=0.99, lam=0.95, fixed_lr=False)
+        # 1M // 2048 / 488 = 1
+        log_interval = 1
+    elif args.alg == 'DISDC':
+        import pg.agents.disdc as DISDC
+        agent = DISDC.PPOAgent(sess, env, horizon=2048,
                               gamma=0.99, lam=0.95, fixed_lr=False)
         # 1M // 2048 / 488 = 1
         log_interval = 1
