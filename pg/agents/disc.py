@@ -261,21 +261,21 @@ class PPOAgent(BaseAgent):
             if np.mean(absrho_dw_all[start:end]) <= 1 + 0.1:
                 filter_inds = np.concatenate([filter_inds, np.arange(start, end)])
         # Add the latest traj
-        piktraj_inds = np.arange(obs_all.shape[0])[-self.horizon:]
-        filter_inds = np.concatenate([filter_inds, piktraj_inds])
+        newtraj_inds = np.arange(obs_all.shape[0])[-self.horizon:]
+        filter_inds = np.concatenate([filter_inds, newtraj_inds])
 
-        obs_filter = obs_all[filter_inds]
-        ac_filter = ac_all[filter_inds]
-        adv_filter = adv_all[filter_inds]
-        ret_filter = ret_all[filter_inds]
-        neglogp_dw_old_filter = neglogp_dw_old_all[filter_inds]
-        v_filter = v_all[filter_inds]
-        neglogp_dw_pik_filter = neglogp_dw_pik_all[filter_inds]
-        rho_filter = rho_all[filter_inds]
+        obs_filted = obs_all[filter_inds]
+        ac_filted = ac_all[filter_inds]
+        adv_filted = adv_all[filter_inds]
+        ret_filted = ret_all[filter_inds]
+        neglogp_dw_old_filted = neglogp_dw_old_all[filter_inds]
+        v_filted = v_all[filter_inds]
+        neglogp_dw_pik_filted = neglogp_dw_pik_all[filter_inds]
+        rho_filted = rho_all[filter_inds]
 
-        n_trajs_active = obs_filter.shape[0] // self.horizon
+        n_trajs_active = obs_filted.shape[0] // self.horizon
 
-        on_policy = np.zeros(obs_filter.shape[0])
+        on_policy = np.zeros(obs_filted.shape[0])
         on_policy[-self.horizon:] = n_trajs_active
 
         lr = self.lr if self.fixed_lr else np.maximum(self.lr * frac, 1e-4)
@@ -293,7 +293,7 @@ class PPOAgent(BaseAgent):
 
         self.sess.run(self.sync_op)
 
-        active_length = obs_filter.shape[0]
+        active_length = obs_filted.shape[0]
         indices = np.arange(active_length)
         minibatch_off = (active_length - self.horizon) // self.nminibatches
         minibatch_on = self.horizon // self.nminibatches
@@ -309,20 +309,20 @@ class PPOAgent(BaseAgent):
                     idx_off = []
                 idx_on = np.random.choice(indices[-self.horizon:], minibatch_on)
                 mbinds = np.concatenate([idx_off, idx_on]).astype(np.int64)
-                advs = adv_filter[mbinds]
-                rhos = rho_filter[mbinds]
+                advs = adv_filted[mbinds]
+                rhos = rho_filted[mbinds]
                 rhos = np.minimum(rhos, 1.0)
                 advs_mean = np.mean(advs * rhos) / np.mean(rhos)
                 advs_std = np.std(advs * rhos)
                 advs_norm = (advs - advs_mean) / (advs_std + 1e-8)
                 inputs = {
-                    self.obs_ph: obs_filter[mbinds],
-                    self.ac_ph: ac_filter[mbinds],
+                    self.obs_ph: obs_filted[mbinds],
+                    self.ac_ph: ac_filted[mbinds],
                     self.adv_ph: advs_norm,
-                    self.ret_ph: ret_filter[mbinds],
-                    self.val_ph: v_filter[mbinds],
-                    self.neglogp_dw_old_ph: neglogp_dw_old_filter[mbinds],
-                    self.neglogp_dw_pik_ph: neglogp_dw_pik_filter[mbinds],
+                    self.ret_ph: ret_filted[mbinds],
+                    self.val_ph: v_filted[mbinds],
+                    self.neglogp_dw_old_ph: neglogp_dw_old_filted[mbinds],
+                    self.neglogp_dw_pik_ph: neglogp_dw_pik_filted[mbinds],
                     self.lr_ph: lr,
                     self.alpha_ph: self.alpha,
                     self.on_policy_ph: on_policy[mbinds]
@@ -347,10 +347,10 @@ class PPOAgent(BaseAgent):
                 tv_buf.append(tv)
 
             # tv_inputs = {
-            #     self.obs_ph: obs_filter,
-            #     self.ac_ph: ac_filter,
-            #     self.neglogp_dw_old_ph: neglogp_dw_old_filter,
-            #     self.neglogp_dw_pik_ph: neglogp_dw_pik_filter,
+            #     self.obs_ph: obs_filted,
+            #     self.ac_ph: ac_filted,
+            #     self.neglogp_dw_old_ph: neglogp_dw_old_filted,
+            #     self.neglogp_dw_pik_ph: neglogp_dw_pik_filted,
             #     self.on_policy_ph: on_policy
             # }
             # pi_loss_ctl_all = self.sess.run(self.pi_loss_ctl, feed_dict=tv_inputs)
