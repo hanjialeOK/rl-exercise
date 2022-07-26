@@ -1,6 +1,5 @@
 import numpy as np
 import tensorflow as tf
-import os
 
 import pg.buffer.gaebuffer as Buffer
 from pg.agents.base import BaseAgent
