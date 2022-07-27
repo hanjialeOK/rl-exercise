@@ -20,7 +20,7 @@ GPU0="${4:=0}"
 # default: 1
 GPU1="${5:=1}"
 ENV=('Ant-v2' 'BipedalWalkerHardcore-v3' 'HalfCheetah-v2' 'Hopper-v2' 'Humanoid-v2', 'HumanoidStandup-v2'
-     'InvertedDoublePendulum-v2', 'InvertedPendulum-v2', 'Swimmer-v2', 'Walker2d-v2')
+     'InvertedDoublePendulum-v2' 'InvertedPendulum-v2' 'Swimmer-v2' 'Walker2d-v2')
 LEN=${#ENV[*]}
 SECONDS=0
 
