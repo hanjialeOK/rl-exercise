@@ -10,10 +10,6 @@ import matplotlib.ticker as ticker
 
 DIV_LINE_WIDTH = 50
 
-# Global vars for tracking and labeling data at load time.
-units = dict()
-exp_idx = 0
-
 
 def plot_data(data, xaxis='Step', value="AvgEpRet", condition="Condition1", smooth=1, ax=None, **kwargs):
     if smooth > 1:
@@ -89,9 +85,9 @@ def get_datasets(logdir, legend=None, tag=None, data_file='progress.txt'):
     spinup.logx.Logger.
     Assumes that any file "progress.txt" is a valid hit.
     """
-    global units
-    global exp_idx
     datasets = []
+    units = dict()
+    exp_idx = 0
     for root, _, files in os.walk(logdir):
         if ('progress.txt' in files) or ('progress.csv' in files):
             exp_name = None
@@ -124,7 +120,7 @@ def get_datasets(logdir, legend=None, tag=None, data_file='progress.txt'):
             exp_data.insert(len(exp_data.columns), 'Condition1', condition1)
             exp_data.insert(len(exp_data.columns), 'Condition2', condition2)
             datasets.append(exp_data)
-    return datasets, condition1
+    return datasets, units, condition1
 
 
 def main(args):
@@ -145,13 +141,13 @@ def main(args):
     data = []
     if args.legend:
         for logdir, legend in zip(logdirs, args.legend):
-            datasets, cond = get_datasets(
+            datasets, units, cond = get_datasets(
                 logdir=logdir, legend=legend, tag=args.tag, data_file=args.file)
             data += datasets
             print(f'{logdir} -> {cond}, {units[cond]}')
     else:
         for logdir in logdirs:
-            datasets, cond = get_datasets(
+            datasets, units, cond = get_datasets(
                 logdir=logdir, tag=args.tag, data_file=args.file)
             data += datasets
             print(f'{logdir} -> {cond}, {units[cond]}')

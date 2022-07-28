@@ -10,10 +10,6 @@ import matplotlib.ticker as ticker
 
 DIV_LINE_WIDTH = 50
 
-# Global vars for tracking and labeling data at load time.
-units = dict()
-exp_idx = 0
-
 
 def plot_data(data, xaxis='Step', value="AvgEpRet", condition="Condition1", smooth=1, ax=None, **kwargs):
     if smooth > 1:
@@ -82,9 +78,9 @@ def get_datasets(logdir, legend=None, tag=None, data_file='progress.txt'):
     spinup.logx.Logger.
     Assumes that any file "progress.txt" is a valid hit.
     """
-    global units
-    global exp_idx
     datasets = []
+    units = dict()
+    exp_idx = 0
     for root, _, files in os.walk(logdir):
         if ('progress.txt' in files) or ('progress.csv' in files):
             exp_name = None
@@ -117,14 +113,14 @@ def get_datasets(logdir, legend=None, tag=None, data_file='progress.txt'):
             exp_data.insert(len(exp_data.columns), 'Condition1', condition1)
             exp_data.insert(len(exp_data.columns), 'Condition2', condition2)
             datasets.append(exp_data)
-    return datasets, condition1
+    return datasets, units, condition1
 
 
 def main(args):
     envs = ['Ant-v2', 'BipedalWalkerHardcore-v3', 'HalfCheetah-v2', 'Hopper-v2', 'Humanoid-v2', 'HumanoidStandup-v2',
             'InvertedDoublePendulum-v2', 'InvertedPendulum-v2', 'Swimmer-v2', 'Walker2d-v2']
-    algs = ['DISC_test11', 'DISC_test10']
-    legends = ['DISC seed', 'DISC']
+    algs = ['PPO_baseline', 'GePPO_baseline', 'GeDISC_PPO_0.2_baseline']
+    legends = ['PPO', 'GePPO', 'GeDISC_PPO']
     version = 'v2'
 
     nsize = (2, 5)
@@ -155,10 +151,8 @@ def main(args):
         print('Getting data from...\n' + '='*DIV_LINE_WIDTH + '\n')
 
         data = []
-        global units
-        units = dict()
         for logdir, legend in zip(logdirs, legends):
-            datasets, cond = get_datasets(
+            datasets, units, cond = get_datasets(
                 logdir=logdir, legend=legend, tag=args.tag, data_file=args.file)
             data += datasets
             print(f'{logdir} -> {cond}, {units[cond]}')
