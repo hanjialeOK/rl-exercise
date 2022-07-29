@@ -172,12 +172,16 @@ class PPOAgent(BaseAgent):
         ratio = tf.exp(neglogp_old_ph - neglogpac)
         ratio_pik = tf.exp(neglogp_old_ph - neglogp_pik_ph)
         center = ratio_pik if self.geppo else 1.0
-        pi_loss1 = -adv_ph * ratio
-        pi_loss2 = -adv_ph * tf.clip_by_value(
+        ratio_clip = tf.clip_by_value(
             ratio, center - self.clip_ratio, center + self.clip_ratio)
+        # ratio_clip = tf.clip_by_value(
+        #     ratio_clip, 1.0 - 0.8, 1.0 + 0.8)
+        pi_loss1 = -adv_ph * ratio
+        pi_loss2 = -adv_ph * ratio_clip
         pi_loss = tf.reduce_mean(weights_ph * tf.maximum(pi_loss1, pi_loss2))
 
         pi_loss_ctl = 0.5 * tf.reduce_mean(tf.square(neglogp_old_ph - neglogpac)*on_policy_ph)
+        # pi_loss_ctl = 0.5 * tf.reduce_mean((ratio - 1.0 - tf.log(ratio))*on_policy_ph)
         pi_loss += beta_ph * pi_loss_ctl
 
         # Total loss
