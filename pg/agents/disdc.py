@@ -62,7 +62,7 @@ class PPOAgent(BaseAgent):
                  ent_coef=0.0, vf_coef=0.5, max_grad_norm=0.5, jtarg=1e-3,
                  horizon=2048, nminibatches=32, gamma=0.99, lam=0.95,
                  alpha=1, grad_clip=False, vf_clip=True, fixed_lr=False,
-                 nlatest=64):
+                 nlatest=64, clip_ratio2=0.8):
         self.sess = sess
         self.obs_shape = env.observation_space.shape
         self.ac_shape = env.action_space.shape
@@ -80,6 +80,7 @@ class PPOAgent(BaseAgent):
         self.grad_clip = grad_clip
         self.vf_clip = vf_clip
         self.fixed_lr = fixed_lr
+        self.clip_ratio2 = clip_ratio2
 
         self.buffer = Buffer.DISCBuffer(
             env, horizon=horizon, nlatest=nlatest, gamma=gamma, lam=lam,
@@ -171,7 +172,7 @@ class PPOAgent(BaseAgent):
         ratio_dw_clip = tf.clip_by_value(
             ratio_dw, ratio_dw_pik - self.clip_ratio, ratio_dw_pik + self.clip_ratio)
         ratio_dw_clip2 = tf.clip_by_value(
-            ratio_dw_clip, 1.0 - self.clip_ratio, 1.0 + self.clip_ratio)
+            ratio_dw_clip, 1.0 - self.clip_ratio2, 1.0 + self.clip_ratio2)
         # ratio_dw_min = tf.where(
         #     adv_ph > 0,
         #     tf.minimum(ratio_dw, ratio_dw_clip),
@@ -194,8 +195,8 @@ class PPOAgent(BaseAgent):
         absratio = tf.reduce_mean(tf.abs(ratio - 1.0) + 1.0)
         ratioclipped = tf.where(
             adv_ph > 0,
-            ratio_dw > (1.0 + self.clip_ratio),
-            ratio_dw < (1.0 - self.clip_ratio))
+            ratio_dw > tf.minimum((1.0 + self.clip_ratio2), (ratio_dw_pik + self.clip_ratio)),
+            ratio_dw < tf.maximum((1.0 - self.clip_ratio2), (ratio_dw_pik - self.clip_ratio)))
         ratioclipfrac = tf.reduce_mean(tf.cast(ratioclipped, tf.float32))
         tv_on = 0.5 * tf.reduce_mean(tf.abs(ratio - ratio_pik)*on_policy_ph)
         tv = 0.5 * tf.reduce_mean(tf.abs(ratio - ratio_pik))
