@@ -62,8 +62,8 @@ class PPOAgent(BaseAgent):
                  ent_coef=0.0, vf_coef=0.5, max_grad_norm=0.5,
                  horizon=2048, nminibatches=32, gamma=0.99, lam=0.95,
                  grad_clip=False, vf_clip=True, fixed_lr=False, beta=1,
-                 thresh=0.5, alpha=0.03, nlatest=64, uniform=True,
-                 geppo=True):
+                 thresh=0.4, alpha=0.03, nlatest=64, uniform=True,
+                 geppo=True, clip_ratio2=0.8):
         self.sess = sess
         self.obs_shape = env.observation_space.shape
         self.ac_shape = env.action_space.shape
@@ -84,6 +84,7 @@ class PPOAgent(BaseAgent):
         self.nlatest = nlatest
         self.beta = beta
         self.geppo = geppo
+        self.clip_ratio2 = clip_ratio2
 
         self.buffer = Buffer.GAEVBuffer(
             env, horizon=horizon, nlatest=nlatest, gamma=gamma, lam=lam,
@@ -175,7 +176,7 @@ class PPOAgent(BaseAgent):
         ratio_clip = tf.clip_by_value(
             ratio, center - self.clip_ratio, center + self.clip_ratio)
         ratio_clip = tf.clip_by_value(
-            ratio_clip, 1.0 - 0.8, 1.0 + 0.8)
+            ratio_clip, 1.0 - self.clip_ratio2, 1.0 + self.clip_ratio2)
         pi_loss1 = -adv_ph * ratio
         pi_loss2 = -adv_ph * ratio_clip
         pi_loss = tf.reduce_mean(weights_ph * tf.maximum(pi_loss1, pi_loss2))
