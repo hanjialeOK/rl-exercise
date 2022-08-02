@@ -230,7 +230,7 @@ def main():
     for update in range(0, nupdates + 1):
         # Clear buffer
         for t in range(1, horizon + 1):
-            ac, val, neglogp = agent.select_action(obs)
+            ac, val, neglogp, mean, logstd = agent.select_action(obs)
 
             next_obs, reward, done, info = env.step(ac)
             next_raw_obs, raw_rew = env.get_raw()
@@ -238,8 +238,9 @@ def main():
             ep_ret += raw_rew
 
             # done = done if ep_len < max_ep_len else False
-            agent.buffer.store(obs, ac, reward, done, next_obs, val, neglogp,
-                               raw_obs, raw_rew, next_raw_obs)
+            agent.buffer.store(obs=obs, ac=ac, rew=reward, done=done, obs2=next_obs,
+                               val=val, neglogp=neglogp, mean=mean, logstd=logstd,
+                               raw_obs=raw_obs, raw_rew=raw_rew, raw_obs2=next_raw_obs)
 
             obs = next_obs
             raw_obs = next_raw_obs

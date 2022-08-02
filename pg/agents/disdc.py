@@ -135,7 +135,7 @@ class PPOAgent(BaseAgent):
 
         v1 = self.critic(ob1_ph)
 
-        get_action_ops = [mu1, pi1, v1, neglogp1_dw]
+        get_action_ops = [mu1, logstd1, pi1, v1, neglogp1_dw]
 
         # Train batch data
         mu = self.actor(obs_ph)
@@ -385,10 +385,10 @@ class PPOAgent(BaseAgent):
                 np.mean(ent_buf), np.mean(kl_buf)]
 
     def select_action(self, obs, deterministic=False):
-        [mu, pi, v, neglogp] = self.sess.run(
+        [mu, logstd, pi, v, neglogp] = self.sess.run(
             self.get_action_ops, feed_dict={self.ob1_ph: obs.reshape(1, -1)})
         ac = mu if deterministic else pi
-        return pi, v, neglogp
+        return pi, v, neglogp, mu, logstd
 
     def compute_v(self, obs):
         v = self.sess.run(

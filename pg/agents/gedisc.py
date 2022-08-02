@@ -58,11 +58,11 @@ class CriticMLP(tf.keras.Model):
 
 class PPOAgent(BaseAgent):
     def __init__(self, sess, env,
-                 clip_ratio=0.2, lr=3e-4, train_iters=10, target_kl=1e-3,
+                 clip_ratio=0.4, lr=3e-4, train_iters=10, target_kl=1e-3,
                  ent_coef=0.0, vf_coef=0.5, max_grad_norm=0.5,
                  horizon=2048, nminibatches=32, gamma=0.99, lam=0.95,
                  grad_clip=False, vf_clip=True, fixed_lr=False, beta=1,
-                 thresh=0.4, alpha=0.03, nlatest=64, uniform=True,
+                 thresh=0.5, alpha=0.03, nlatest=64, uniform=True,
                  geppo=True):
         self.sess = sess
         self.obs_shape = env.observation_space.shape
@@ -140,7 +140,7 @@ class PPOAgent(BaseAgent):
 
         v1 = self.critic(ob1_ph)
 
-        get_action_ops = [mu1, pi1, v1, neglogp1]
+        get_action_ops = [mu1, logstd1, pi1, v1, neglogp1]
 
         # Train batch data
         mu = self.actor(obs_ph)
@@ -174,8 +174,8 @@ class PPOAgent(BaseAgent):
         center = ratio_pik if self.geppo else 1.0
         ratio_clip = tf.clip_by_value(
             ratio, center - self.clip_ratio, center + self.clip_ratio)
-        # ratio_clip = tf.clip_by_value(
-        #     ratio_clip, 1.0 - 0.8, 1.0 + 0.8)
+        ratio_clip = tf.clip_by_value(
+            ratio_clip, 1.0 - 0.8, 1.0 + 0.8)
         pi_loss1 = -adv_ph * ratio
         pi_loss2 = -adv_ph * ratio_clip
         pi_loss = tf.reduce_mean(weights_ph * tf.maximum(pi_loss1, pi_loss2))
@@ -250,11 +250,13 @@ class PPOAgent(BaseAgent):
         n_oldtrajs = rho_all.shape[0] // self.horizon - 1
 
         filter_inds = np.array([], dtype=np.int64)
+        thresh = self.thresh
+        # thresh = np.maximum(self.thresh * frac, 0.2)
         # Filter old trajs
         for s in range(n_oldtrajs):
             start = s*self.horizon
             end = (s+1)*self.horizon
-            if np.mean(absrho_all[start:end]) <= 1 + self.thresh:
+            if np.mean(absrho_all[start:end]) <= 1 + thresh:
                 filter_inds = np.concatenate([filter_inds, np.arange(start, end)])
         # Add the latest traj
         newtraj_inds = np.arange(obs_all.shape[0])[-self.horizon:]
@@ -378,6 +380,7 @@ class PPOAgent(BaseAgent):
         logger.logkv("loss/tv", np.mean(tv_buf))
         logger.logkv("loss/tv_on", np.mean(tv_on_buf))
         logger.logkv("loss/beta", self.beta)
+        logger.logkv("loss/thresh", thresh)
 
         self.buffer.update()
 
@@ -385,10 +388,10 @@ class PPOAgent(BaseAgent):
                 np.mean(ent_buf), np.mean(kl_buf)]
 
     def select_action(self, obs, deterministic=False):
-        [mu, pi, v, neglogp] = self.sess.run(
+        [mu, logstd, pi, v, neglogp] = self.sess.run(
             self.get_action_ops, feed_dict={self.ob1_ph: obs.reshape(1, -1)})
         ac = mu if deterministic else pi
-        return pi, v, neglogp
+        return pi, v, neglogp, mu, logstd
 
     def compute_v(self, obs):
         v = self.sess.run(

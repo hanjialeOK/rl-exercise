@@ -120,7 +120,7 @@ class PPOAgent(BaseAgent):
 
         v1 = self.critic(ob1_ph)
 
-        get_action_ops = [mu1, pi1, v1, neglogp1]
+        get_action_ops = [mu1, logstd1, pi1, v1, neglogp1]
 
         # Train batch data
         mu = self.actor(obs_ph)
@@ -195,7 +195,8 @@ class PPOAgent(BaseAgent):
         [obs_all, ac_all, adv_all, ret_all, val_all, neglogp_all] = buf_data
         assert obs_all.shape[0] == self.horizon
 
-        lr = self.lr if self.fixed_lr else self.lr * frac
+        # lr = self.lr if self.fixed_lr else self.lr * frac
+        lr = self.lr if self.fixed_lr else np.maximum(self.lr * frac, 1e-4)
 
         pi_loss_buf = []
         vf_loss_buf = []
@@ -249,10 +250,10 @@ class PPOAgent(BaseAgent):
                 np.mean(ent_buf), np.mean(kl_buf)]
 
     def select_action(self, obs, deterministic=False):
-        [mu, pi, v, neglogp] = self.sess.run(
+        [mu, logstd, pi, v, neglogp] = self.sess.run(
             self.get_action_ops, feed_dict={self.ob1_ph: obs.reshape(1, -1)})
         ac = mu if deterministic else pi
-        return pi, v, neglogp
+        return pi, v, neglogp, mu, logstd
 
     def compute_v(self, obs):
         v = self.sess.run(
