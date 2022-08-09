@@ -235,10 +235,8 @@ class ACERAgent(BaseAgent):
             g = tf.compat.v1.gradients(ys=-(pi_loss - meanent * self.ent_coef)*self.minibatch, xs=phi)
             k = tf.compat.v1.gradients(ys=meankl*self.minibatch, xs=phi)
             grads_phi = []
-            k_dot_g_all = []
             for g_i, k_i in zip(g, k):
                 k_dot_g = tf.reduce_sum(k_i * g_i, axis=-1)
-                k_dot_g_all.append(k_dot_g)
                 adj = tf.maximum(0.0, tf.div(k_dot_g - self.delta, tf.reduce_sum(tf.square(k_i), axis=-1)))
                 g_i -= tf.expand_dims(adj, axis=-1) * k_i
                 # Dont't forget to divide by self.minibatch for mean grads.
@@ -273,7 +271,7 @@ class ACERAgent(BaseAgent):
         self.train_op = train_op
 
         self.losses = [pi_loss_bc, pi_loss, q_loss, meanent, meankl]
-        self.infos = [gradclipped, k_dot_g_all]
+        self.infos = [gradclipped]
 
     def _build_average_op(self):
         sync_avg_ops = []
