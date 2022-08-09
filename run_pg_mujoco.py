@@ -60,7 +60,7 @@ def main():
     parser.add_argument('--env', type=str,
                         default='Walker2d-v2')
     parser.add_argument('--alg', type=str, default='PPO2',
-                        choices=['A2C', 'VPG', 'TRPO', 'DISDC',
+                        choices=['A2C', 'ACER', 'VPG', 'TRPO', 'DISDC',
                                  'PPO', 'PPO2', 'DISC', 'GePPO', 'GeDISC'],
                         help='Experiment name')
     parser.add_argument('--allow_eval', action='store_true',
@@ -144,6 +144,10 @@ def main():
                              gamma=0.995, lam=0.97)
         # 1M // 5 // 488 = 409
         log_interval = total_steps // agent.horizon // 488
+    if args.alg == 'ACER':
+        import pg.agents.acer as ACER
+        agent = ACER.ACERAgent(sess, env, horizon=50, gamma=0.99)
+        log_interval = total_steps // agent.horizon // 488
     elif args.alg == 'VPG':
         import pg.agents.vpg as VPG
         agent = VPG.VPGAgent(sess, obs_shape, ac_shape, horizon=1024,
@@ -198,6 +202,8 @@ def main():
     # Actually, we won't use save_weights because it does not contain logstd.
     tf.compat.v1.keras.backend.set_session(sess)
     sess.run(tf.compat.v1.global_variables_initializer())
+    if args.alg == 'ACER':
+        sess.run(agent.init_avg_op)
 
     # with open('/data/hanjl/debug_data4/actor_param.pkl', 'rb') as f:
     #     actor_param = pickle.load(f)
