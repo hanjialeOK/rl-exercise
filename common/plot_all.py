@@ -119,8 +119,14 @@ def get_datasets(logdir, legend=None, tag=None, data_file='progress.txt'):
 def main(args):
     envs = ['Ant-v2', 'BipedalWalkerHardcore-v3', 'HalfCheetah-v2', 'Hopper-v2', 'Humanoid-v2', 'HumanoidStandup-v2',
             'InvertedDoublePendulum-v2', 'InvertedPendulum-v2', 'Swimmer-v2', 'Walker2d-v2']
-    algs = ['PPO_baseline', 'GePPO_baseline', 'GeDISC_PPO_0.2_baseline']
-    legends = ['PPO', 'GePPO', 'GeDISC_PPO']
+    algs = ['PPO_baseline', 'GePPO_baseline',
+            'GeDISC_PPO_0.8_baseline',
+            'GeDISC_0.2_0.8',
+            'GeDISC_0.4_0.8',
+            'GeDISC_thresh_0.3',
+            'GeDISC_thresh_0.4_0.2']
+    legends = ['PPO', 'GePPO', 'GeDISC_PPO_0.8',
+               'GeDISC_0.2_0.8', 'GeDISC_0.4_0.8', 'GeDISC_thresh_0.3', 'GeDISC_thresh_0.4_0.2']
     version = 'v2'
 
     nsize = (2, 5)
