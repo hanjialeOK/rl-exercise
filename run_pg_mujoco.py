@@ -94,8 +94,9 @@ def main():
     if not os.path.exists(checkpoint_dir):
         os.makedirs(checkpoint_dir)
     progress_csv = os.path.join(base_dir, 'progress.csv')
+    log_txt = os.path.join(base_dir, 'log.txt')
     summary_writer = tf.compat.v1.summary.FileWriter(summary_dir)
-    logger = Logger(progress_csv, summary_writer)
+    logger = Logger(progress_csv, log_txt, summary_writer)
 
     # Random seed
     tf.compat.v1.set_random_seed(args.seed)
@@ -109,8 +110,6 @@ def main():
     env_eval.seed(args.seed)
     obs_shape = env.observation_space.shape
     ac_shape = env.action_space.shape
-    ac_max = float(env.action_space.high[0])
-    ac_min = float(env.action_space.low[0])
 
     # Our own simple warpper
     # env = VecNormalize2(env)
@@ -278,7 +277,7 @@ def main():
         # Steps we have reached.
         step = update * horizon
 
-        [pi_loss, vf_loss, ent, kl] = agent.update(frac, logger)
+        agent.update(frac, logger)
 
         if update % log_interval == 0:
             avg_ep_ret = np.mean(ep_ret_buf)
@@ -288,29 +287,13 @@ def main():
             logger.logkv("train/timesteps", step)
             logger.logkv("train/avgeplen", avg_ep_len)
             logger.logkv("train/avgepret", avg_ep_ret)
-            logger.logkv("loss/avgpiloss", pi_loss)
-            logger.logkv("loss/avgvfloss", vf_loss)
-            logger.logkv("loss/avgentropy", ent)
-            logger.logkv("loss/avgkl", kl)
 
-            log_infos = []
-            log_infos.append(f'Env: {args.env} | Alg: {args.alg} | '
-                             f'TotalSteps: {total_steps:.1e} | '
-                             f'Horizon: {horizon}')
-            log_infos.append(f'Update: {update}/{nupdates}: {update/nupdates:.1%} | '
-                             f'AvgLen: {avg_ep_len:.1f} | '
-                             f'AvgRet: {avg_ep_ret:.1f}')
-            log_infos.append(f'pi_loss: {pi_loss:.4f} | '
-                             f'v_loss: {vf_loss:.4f} | '
-                             f'entropy: {ent:.4f} | '
-                             f'kl: {kl:.4f}')
-            info_lens = [len(info) for info in log_infos]
-            max_info_len = max(info_lens)
-            n_slashes = max_info_len + 2
-            print("+" + "-"*n_slashes + "+")
-            for info in log_infos:
-                print(f"| {info:{max_info_len}s} |")
-            print("+" + "-"*n_slashes + "+")
+            logger.loginfo('env', args.env)
+            logger.loginfo('alg', args.alg)
+            logger.loginfo('totalsteps', total_steps)
+            logger.loginfo('totalupdates', nupdates)
+            logger.loginfo('horizon', horizon)
+            logger.loginfo('progress', f'{update/nupdates:.1%}')
 
             logger.dumpkvs(timestep=step)
 

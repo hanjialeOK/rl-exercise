@@ -198,20 +198,14 @@ class PPOAgent(BaseAgent):
         self.neglopac = neglopac
         self.v1 = v1
         self.v = v
-        self.absratio = absratio
-        self.pi_loss = pi_loss
-        self.vf_loss = vf_loss
-        self.approxkl = approxkl
-        self.meanent = meanent
         self.tv = tv
-        self.ratioclipfrac = ratioclipfrac
-        self.gradclipped = gradclipped
         # self.train_op = train_op
         self.pi_train_op = pi_train_op
         self.vf_train_op = vf_train_op
 
-        self.losses = [pi_loss, vf_loss, meanent, approxkl]
-        self.infos = [absratio, ratioclipfrac, gradclipped, tv]
+        self.stats_list = [pi_loss, vf_loss, meanent, approxkl, absratio, ratioclipfrac, gradclipped, tv]
+        self.loss_names = ['pi_loss', 'vf_loss', 'entropy', 'kl', 'absratio', 'ratioclipfrac', 'gradclipped', 'tv']
+        assert len(self.stats_list) == len(self.loss_names)
 
     def update(self, frac, logger):
         buf_data = self.buffer.vtrace()
@@ -229,18 +223,11 @@ class PPOAgent(BaseAgent):
 
         # lr = self.lr if self.fixed_lr else self.lr * frac
 
-        pi_loss_buf = []
-        vf_loss_buf = []
-        ent_buf = []
-        kl_buf = []
-        tv_buf = []
-        ratio_buf = []
-        ratioclipfrac_buf = []
-        gradclipped_buf = []
-
         length = obs_all.shape[0]
         minibatch = length // self.nminibatches
         indices = np.arange(length)
+
+        mblossvals = []
         for _ in range(self.train_iters):
             # Randomize the indexes
             np.random.shuffle(indices)
@@ -265,21 +252,9 @@ class PPOAgent(BaseAgent):
                     self.lr_ph: self.lr
                 }
 
-                infos, losses, _, _ = self.sess.run(
-                    [self.infos, self.losses, self.pi_train_op, self.vf_train_op],
-                    feed_dict=inputs)
-                # Unpack losses
-                pi_loss, vf_loss, ent, kl = losses
-                pi_loss_buf.append(pi_loss)
-                vf_loss_buf.append(vf_loss)
-                ent_buf.append(ent)
-                kl_buf.append(kl)
-                # Unpack infos
-                ratio, ratioclipfrac, gradclipped, tv = infos
-                ratio_buf.append(ratio)
-                ratioclipfrac_buf.append(ratioclipfrac)
-                gradclipped_buf.append(gradclipped)
-                tv_buf.append(tv)
+                losses = self.sess.run(
+                    self.stats_list + [self.pi_train_op, self.vf_train_op], feed_dict=inputs)[:-2]
+                mblossvals.append(losses)
 
             tv_inputs = {
                 self.obs_ph: obs_all,
@@ -296,16 +271,12 @@ class PPOAgent(BaseAgent):
             self.lr *= (1 + self.alpha)
 
         # Here you can add any information you want to log!
-        logger.logkv("loss/gradclipfrac", np.mean(gradclipped))
+        lossvals = np.mean(mblossvals, axis=0)
+        for (lossval, lossname) in zip(lossvals, self.loss_names):
+            logger.logkv('loss/' + lossname, lossval)
         logger.logkv("loss/lr", self.lr)
-        logger.logkv("loss/ratio", np.mean(ratio_buf))
-        logger.logkv("loss/ratioclipfrac", np.mean(ratioclipfrac_buf))
-        logger.logkv("loss/tv", tv_all)
 
         self.buffer.update()
-
-        return [np.mean(pi_loss_buf), np.mean(vf_loss_buf),
-                np.mean(ent_buf), np.mean(kl_buf)]
 
     def select_action(self, obs, deterministic=False):
         [mu, logstd, pi, v, neglogp] = self.sess.run(

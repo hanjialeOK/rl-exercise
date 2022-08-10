@@ -147,7 +147,7 @@ class PPOAgent(BaseAgent):
         mu_pik = tf.stop_gradient(self.actor_pik(obs_ph))
         logstd_pik = tf.tile(logstd1_pik, (tf.shape(mu_pik)[0], 1))
         dist_pik = DiagGaussianPd(mu_pik, logstd_pik)
-        kl = tf.reduce_sum(dist.kl(dist_pik), axis=1)
+        kl = tf.reduce_sum(dist_pik.kl(dist), axis=1)
         meankl = tf.reduce_mean(kl)
 
         v = self.critic(obs_ph)
@@ -219,18 +219,13 @@ class PPOAgent(BaseAgent):
         self.v1 = v1
         self.v = v
         self.neglogpac_dw = neglogpac_dw
-        self.absratio = absratio
-        self.pi_loss_ctl = pi_loss_ctl
-        self.pi_loss = pi_loss
-        self.vf_loss = vf_loss
-        self.meankl = meankl
-        self.meanent = meanent
-        self.ratioclipfrac = ratioclipfrac
-        self.gradclipped = gradclipped
         self.train_op = train_op
 
-        self.losses = [pi_loss_ctl, pi_loss, vf_loss, meanent, meankl]
-        self.infos = [absratio, ratioclipfrac, gradclipped, tv_on, tv]
+        self.stats_list = [pi_loss_ctl, pi_loss, vf_loss, meanent, meankl,
+                           absratio, ratioclipfrac, gradclipped, tv_on, tv]
+        self.loss_names = ['pi_loss_ctl', 'pi_loss', 'vf_loss', 'entropy', 'kl',
+                           'absratio', 'ratioclipfrac', 'gradclipped', 'tv_on', 'tv']
+        assert len(self.stats_list) == len(self.loss_names)
 
     def _build_sync_op(self):
         sync_qt_ops = []
@@ -279,23 +274,14 @@ class PPOAgent(BaseAgent):
 
         lr = self.lr if self.fixed_lr else np.maximum(self.lr * frac, 1e-4)
 
-        pi_loss_ctl_buf = []
-        pi_loss_buf = []
-        vf_loss_buf = []
-        ent_buf = []
-        kl_buf = []
-        ratio_buf = []
-        ratioclipfrac_buf = []
-        gradclipped_buf = []
-        tv_on_buf = []
-        tv_buf = []
-
         self.sess.run(self.sync_op)
 
         active_length = obs_filted.shape[0]
         indices = np.arange(active_length)
         minibatch_off = (active_length - self.horizon) // self.nminibatches
         minibatch_on = self.horizon // self.nminibatches
+
+        mblossvals = []
         for _ in range(self.train_iters):
             # Randomize the indexes
             # np.random.shuffle(indices)
@@ -327,23 +313,8 @@ class PPOAgent(BaseAgent):
                     self.on_policy_ph: on_policy[mbinds]
                 }
 
-                infos, losses, _ = self.sess.run(
-                    [self.infos, self.losses, self.train_op],
-                    feed_dict=inputs)
-                # Unpack losses
-                pi_loss_ctl, pi_loss, vf_loss, ent, kl = losses
-                pi_loss_ctl_buf.append(pi_loss_ctl)
-                pi_loss_buf.append(pi_loss)
-                vf_loss_buf.append(vf_loss)
-                ent_buf.append(ent)
-                kl_buf.append(kl)
-                # Unpack infos
-                ratio, ratioclipfrac, gradclipped, tv_on, tv = infos
-                ratio_buf.append(ratio)
-                ratioclipfrac_buf.append(ratioclipfrac)
-                gradclipped_buf.append(gradclipped)
-                tv_on_buf.append(tv_on)
-                tv_buf.append(tv)
+                losses = self.sess.run(self.stats_list + [self.train_op], feed_dict=inputs)[:-1]
+                mblossvals.append(losses)
 
             # tv_inputs = {
             #     self.obs_ph: obs_filted,
@@ -358,7 +329,8 @@ class PPOAgent(BaseAgent):
         #     self.lr /= (1 + self.alpha)
         # elif tv_all < self.thresh * 0.5 * self.clip_ratio:
         #     self.lr *= (1 + self.alpha)
-        pi_loss_ctl_mean = np.mean(pi_loss_ctl_buf)
+        lossvals = np.mean(mblossvals, axis=0)
+        pi_loss_ctl_mean = lossvals[0]
 
         if pi_loss_ctl_mean > self.jtarg * 1.5:
             self.alpha *= 2
@@ -366,20 +338,13 @@ class PPOAgent(BaseAgent):
             self.alpha /= 2
         self.alpha = np.clip(self.alpha, 2**(-10), 64)
 
-        logger.logkv("loss/gradclipfrac", np.mean(gradclipped))
+        for (lossval, lossname) in zip(lossvals, self.loss_names):
+            logger.logkv('loss/' + lossname, lossval)
         logger.logkv("loss/lr", lr)
-        logger.logkv("loss/ratio", np.mean(ratio_buf))
-        logger.logkv("loss/ratioclipfrac", np.mean(ratioclipfrac_buf))
-        logger.logkv("loss/pi_loss_ctl", pi_loss_ctl_mean)
         logger.logkv("loss/trajs_active", n_trajs_active)
-        logger.logkv("loss/tv", np.mean(tv_buf))
-        logger.logkv("loss/tv_on", np.mean(tv_on_buf))
         logger.logkv("loss/alpha", self.alpha)
 
         self.buffer.update()
-
-        return [np.mean(pi_loss_buf), np.mean(vf_loss_buf),
-                np.mean(ent_buf), np.mean(kl_buf)]
 
     def select_action(self, obs, deterministic=False):
         [mu, logstd, pi, v, neglogp] = self.sess.run(

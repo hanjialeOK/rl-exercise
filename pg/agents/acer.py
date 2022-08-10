@@ -103,7 +103,7 @@ class ACERAgent(BaseAgent):
                  lr=3e-4, ent_coef=0.0, q_coef=0.5, max_grad_norm=10,
                  horizon=50, gamma=0.99, std_init=0.3, replay_init=1000,
                  grad_clip=True, n_sdn_samples=5, replay_size=5000, decay=0.995,
-                 replay_ratio=4, c=5, trust_region=True, delta=0.1, fixed_lr=True):
+                 replay_ratio=4, c=5, trust_region=True, delta=1, fixed_lr=True):
         self.sess = sess
         self.obs_shape = env.observation_space.shape
         self.ac_shape = env.action_space.shape
@@ -214,15 +214,17 @@ class ACERAgent(BaseAgent):
         neglogpac2_old = tf.reduce_sum(dist_old.neglogp(ac2), axis=1)
         rho2 = tf.exp(neglogpac2_old - neglogpac2)
 
-        # A2C objectives
+        # ACER objectives
         pi_loss = -tf.stop_gradient(tf.minimum(rho, self.c) * (qopc - v)) * (-neglogpac)
-        pi_loss_bc = -tf.stop_gradient(tf.nn.relu(1 - self.c / rho2) * (q2 - v)) * (-neglogpac2)
-        pi_loss += pi_loss_bc
         pi_loss = tf.reduce_mean(pi_loss)
+        pi_loss_bc = -tf.stop_gradient(tf.nn.relu(1 - self.c / rho2) * (q2 - v)) * (-neglogpac2)
+        pi_loss_bc = tf.reduce_mean(pi_loss_bc)
+        pi_loss += pi_loss_bc
         q_loss = 0.5 * tf.square(tf.stop_gradient(qret) - q)
-        vf_loss = 0.5 * tf.square(tf.stop_gradient(v_targ) - v)
-        q_loss += vf_loss
         q_loss = tf.reduce_mean(q_loss)
+        vf_loss = 0.5 * tf.square(tf.stop_gradient(v_targ) - v)
+        vf_loss = tf.reduce_mean(vf_loss)
+        q_loss += vf_loss
 
         # Total loss
         loss = pi_loss - meanent * self.ent_coef + q_loss * self.q_coef
@@ -264,14 +266,11 @@ class ACERAgent(BaseAgent):
         self.neglogpac = neglogpac
         self.v = v
         self.q = q
-        self.pi_loss = pi_loss
-        self.q_loss = q_loss
-        self.entropy = meanent
-        self.gradclipped = gradclipped
         self.train_op = train_op
 
-        self.losses = [pi_loss_bc, pi_loss, q_loss, meanent, meankl]
-        self.infos = [gradclipped]
+        self.stats_list = [pi_loss_bc, pi_loss, q_loss, meanent, meankl, gradclipped]
+        self.loss_names = ['pi_loss_bc', 'pi_loss', 'q_loss', 'entropy', 'kl', 'gradclipped']
+        assert len(self.stats_list) == len(self.loss_names)
 
     def _build_average_op(self):
         sync_avg_ops = []
@@ -293,21 +292,15 @@ class ACERAgent(BaseAgent):
         return sync_ops
 
     def update(self, frac, logger):
-        
-        pi_loss_rc_buf = []
-        pi_loss_buf = []
-        q_loss_buf = []
-        ent_buf = []
-        kl_buf = []
-        gradclipped_buf = []
 
         if self.buffer.count < self.replay_init:
-            return 0, 0, 0, 0
+            return
 
         lr = self.lr if self.fixed_lr else self.lr * frac
 
-        n_replay_samples = np.random.poisson(self.replay_ratio)
-        # n_replay_samples = 4
+        # n_replay_samples = np.random.poisson(self.replay_ratio)
+        n_replay_samples = self.replay_ratio
+        mblossvals = []
         for _ in range(n_replay_samples):
             buf_data = self.buffer.get()
             [obs, ac, rew, done, neglogp, mean, logstd] = buf_data
@@ -322,31 +315,17 @@ class ACERAgent(BaseAgent):
                 self.lr_ph: lr
             }
 
-            infos, losses, _ = self.sess.run(
-                [self.infos, self.losses, self.train_op],
-                feed_dict=inputs)
+            losses = self.sess.run(self.stats_list + [self.train_op], feed_dict=inputs)[:-1]
             self.sess.run(self.sync_avg_op)
 
-            # Unpack losses
-            pi_loss_rc, pi_loss, q_loss, ent, kl = losses
-            pi_loss_rc_buf.append(pi_loss_rc)
-            pi_loss_buf.append(pi_loss)
-            q_loss_buf.append(q_loss)
-            ent_buf.append(ent)
-            kl_buf.append(kl)
-            # Unpack infos
-            [gradclipped] = infos
-            gradclipped_buf.append(gradclipped)
+            mblossvals.append(losses)
 
         # Here you can add any information you want to log!
+        lossvals = np.mean(mblossvals, axis=0)
+        for (lossval, lossname) in zip(lossvals, self.loss_names):
+            logger.logkv('loss/' + lossname, lossval)
         logger.logkv("loss/n_replay_samples", n_replay_samples)
-        logger.logkv("loss/pi_loss_rc", np.mean(pi_loss_rc_buf))
-        logger.logkv("loss/q_loss", np.mean(q_loss_buf))
-        logger.logkv("loss/gradclipfrac", np.mean(gradclipped_buf))
         logger.logkv("loss/lr", lr)
-
-        return [np.mean(pi_loss_buf), np.mean(q_loss_buf),
-                np.mean(ent_buf), np.mean(kl_buf)]
 
     def select_action(self, obs, deterministic=False):
         [mu, logstd, pi, v, neglogp] = self.sess.run(

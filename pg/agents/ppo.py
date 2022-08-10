@@ -129,7 +129,7 @@ class PPOAgent(BaseAgent):
 
         v1 = self.critic(ob1_ph)
 
-        get_action_ops = [mu1, pi1, v1, neglogp1]
+        get_action_ops = [mu1, logstd1, pi1, v1, neglogp1]
 
         # Train batch data
         mu = self.actor(obs_ph)
@@ -142,7 +142,7 @@ class PPOAgent(BaseAgent):
         mu_pik = tf.stop_gradient(self.actor_pik(obs_ph))
         logstd_pik = tf.tile(logstd1_pik, (tf.shape(mu_pik)[0], 1))
         dist_pik = DiagGaussianPd(mu_pik, logstd_pik)
-        kl = tf.reduce_sum(dist.kl(dist_pik), axis=1)
+        kl = tf.reduce_sum(dist_pik.kl(dist), axis=1)
         meankl = tf.reduce_mean(kl)
 
         v = self.critic(obs_ph)
@@ -196,17 +196,11 @@ class PPOAgent(BaseAgent):
 
         self.get_action_ops = get_action_ops
         self.v1 = v1
-        self.absratio = absratio
-        self.pi_loss = pi_loss
-        self.vf_loss = vf_loss
-        self.meankl = meankl
-        self.meanent = meanent
-        self.ratioclipfrac = ratioclipfrac
-        self.gradclipped = gradclipped
         self.train_op = train_op
 
-        self.losses = [kl_penalty, pi_loss, vf_loss, meanent, meankl]
-        self.infos = [absratio, ratioclipfrac, gradclipped]
+        self.stats_list = [kl_penalty, pi_loss, vf_loss, meanent, meankl, absratio, ratioclipfrac, gradclipped]
+        self.loss_names = ['kl_penalty', 'pi_loss', 'vf_loss', 'entropy', 'kl', 'absratio', 'ratioclipfrac', 'gradclipped']
+        assert len(self.stats_list) == len(self.loss_names)
 
     def _build_sync_op(self):
         sync_qt_ops = []
@@ -222,21 +216,14 @@ class PPOAgent(BaseAgent):
         [obs_all, ac_all, adv_all, ret_all, val_all, neglogp_all] = buf_data
         assert obs_all.shape[0] == self.horizon
 
-        lr = self.lr if self.fixed_lr else self.lr * frac
-        # lr = self.lr if self.fixed_lr else np.maximum(self.lr * frac, 1e-4)
-
-        pi_loss_buf = []
-        vf_loss_buf = []
-        ent_buf = []
-        kl_buf = []
-        kl_penalty_buf = []
-        ratio_buf = []
-        ratioclipfrac_buf = []
-        gradclipped_buf = []
+        # lr = self.lr if self.fixed_lr else self.lr * frac
+        lr = self.lr if self.fixed_lr else np.maximum(self.lr * frac, 1e-4)
 
         self.sess.run(self.sync_op)
 
         indices = np.arange(self.horizon)
+
+        mblossvals = []
         for _ in range(self.train_iters):
             # Randomize the indexes
             np.random.shuffle(indices)
@@ -257,22 +244,11 @@ class PPOAgent(BaseAgent):
                     self.beta_ph: self.beta
                 }
 
-                infos, losses, _ = self.sess.run(
-                    [self.infos, self.losses, self.train_op], feed_dict=inputs)
-                # Unpack losses
-                kl_penalty, pi_loss, vf_loss, ent, kl = losses
-                pi_loss_buf.append(pi_loss)
-                vf_loss_buf.append(vf_loss)
-                ent_buf.append(ent)
-                kl_buf.append(kl)
-                kl_penalty_buf.append(kl_penalty)
-                # Unpack infos
-                ratio, ratioclipfrac, gradclipped = infos
-                ratio_buf.append(ratio)
-                ratioclipfrac_buf.append(ratioclipfrac)
-                gradclipped_buf.append(gradclipped)
+                losses = self.sess.run(self.stats_list + [self.train_op], feed_dict=inputs)[:-1]
+                mblossvals.append(losses)
 
-        kl_penalty_mean = np.mean(kl_penalty_buf)
+        lossvals = np.mean(mblossvals, axis=0)
+        kl_penalty_mean = lossvals[0]
 
         if kl_penalty_mean > self.target_kl * 1.5:
             self.beta *= 2
@@ -281,21 +257,16 @@ class PPOAgent(BaseAgent):
         self.beta = np.clip(self.beta, 2**(-10), 64)
 
         # Here you can add any information you want to log!
-        logger.logkv("loss/gradclipfrac", np.mean(gradclipped))
+        for (lossval, lossname) in zip(lossvals, self.loss_names):
+            logger.logkv('loss/' + lossname, lossval)
         logger.logkv("loss/lr", lr)
-        logger.logkv("loss/ratio", np.mean(ratio_buf))
-        logger.logkv("loss/ratioclipfrac", np.mean(ratioclipfrac_buf))
-        logger.logkv("loss/kl_penalty", np.mean(kl_penalty_buf))
         logger.logkv("loss/beta", self.beta)
 
-        return [np.mean(pi_loss_buf), np.mean(vf_loss_buf),
-                np.mean(ent_buf), np.mean(kl_buf)]
-
     def select_action(self, obs, deterministic=False):
-        [mu, pi, v, neglogp] = self.sess.run(
+        [mu, logstd, pi, v, neglogp] = self.sess.run(
             self.get_action_ops, feed_dict={self.ob1_ph: obs.reshape(1, -1)})
         ac = mu if deterministic else pi
-        return pi, v, neglogp
+        return pi, v, neglogp, mu, logstd
 
     def compute_v(self, obs):
         v = self.sess.run(
