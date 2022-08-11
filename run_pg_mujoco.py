@@ -141,62 +141,46 @@ def main():
         import pg.agents.a2c as A2C
         agent = A2C.A2CAgent(sess, obs_shape, ac_shape, horizon=5,
                              gamma=0.995, lam=0.97)
-        # 1M // 5 // 488 = 409
-        log_interval = total_steps // agent.horizon // 488
     if args.alg == 'ACER':
         import pg.agents.acer as ACER
         agent = ACER.ACERAgent(sess, env, horizon=50, gamma=0.99)
-        log_interval = total_steps // agent.horizon // 488
     elif args.alg == 'VPG':
         import pg.agents.vpg as VPG
         agent = VPG.VPGAgent(sess, obs_shape, ac_shape, horizon=1024,
                              gamma=0.995, lam=0.97)
-        # 1M // 2048 / 488 = 1
-        log_interval = 2
     elif args.alg == 'TRPO':
         import pg.agents.trpo as TRPO
         agent = TRPO.TRPOAgent(sess, obs_shape, ac_shape, horizon=1024,
                                gamma=0.995, lam=0.97, cg_iters=10)
-        # 1M // 1024 / 488 = 1
-        log_interval = 2
     elif args.alg == 'PPO':
         import pg.agents.ppo as PPO
         agent = PPO.PPOAgent(sess, env, horizon=2048,
                              gamma=0.99, lam=0.95, fixed_lr=False)
-        # 1M // 2048 / 488 = 1
-        log_interval = 1
     elif args.alg == 'PPO2':
         import pg.agents.ppo2 as PPO2
         agent = PPO2.PPOAgent(sess, env, horizon=2048,
                               gamma=0.99, lam=0.95, fixed_lr=False)
-        # 1M // 2048 / 488 = 1
-        log_interval = 1
     elif args.alg == 'DISC':
         import pg.agents.disc as DISC
         agent = DISC.PPOAgent(sess, env, horizon=2048,
                               gamma=0.99, lam=0.95, fixed_lr=False)
-        # 1M // 2048 / 488 = 1
-        log_interval = 1
     elif args.alg == 'DISDC':
         import pg.agents.disdc as DISDC
         agent = DISDC.PPOAgent(sess, env, horizon=2048,
                               gamma=0.99, lam=0.95, fixed_lr=False)
-        # 1M // 2048 / 488 = 1
-        log_interval = 1
     elif args.alg == 'GeDISC':
         import pg.agents.gedisc as GeDISC
         agent = GeDISC.PPOAgent(sess, env, horizon=2048,
                                 gamma=0.99, lam=0.95, fixed_lr=False, uniform=True)
-        # 1M // 2048 / 488 = 1
-        log_interval = 1
     elif args.alg == 'GePPO':
         import pg.agents.geppo as GePPO
         agent = GePPO.PPOAgent(sess, env, horizon=1024,
                                gamma=0.99, lam=0.95, fixed_lr=False, uniform=False)
-        # 1M // 2048 / 488 = 1
-        log_interval = 2
     else:
         raise ValueError('Unknown agent: {}'.format(args.alg))
+
+    # 1M // 2048 / 488 = 1
+    log_interval = total_steps // agent.horizon // 488
 
     # Actually, we won't use save_weights because it does not contain logstd.
     tf.compat.v1.keras.backend.set_session(sess)
