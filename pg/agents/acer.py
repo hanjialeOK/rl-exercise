@@ -103,7 +103,7 @@ class ACERAgent(BaseAgent):
                  lr=3e-4, ent_coef=0.0, q_coef=0.5, max_grad_norm=10,
                  horizon=50, gamma=0.99, std_init=0.3, replay_init=1000,
                  grad_clip=True, n_sdn_samples=5, replay_size=5000, decay=0.995,
-                 replay_ratio=4, c=5, trust_region=True, delta=1, fixed_lr=True):
+                 replay_ratio=4, c=5, trust_region=True, delta=0.1, fixed_lr=True):
         self.sess = sess
         self.obs_shape = env.observation_space.shape
         self.ac_shape = env.action_space.shape
