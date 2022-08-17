@@ -60,7 +60,7 @@ def main():
     parser.add_argument('--env', type=str,
                         default='Walker2d-v2')
     parser.add_argument('--alg', type=str, default='PPO2',
-                        choices=['A2C', 'ACER', 'VPG', 'TRPO', 'DISDC',
+                        choices=['A2C', 'ACER', 'VPG', 'TRPO', 'DISDC', 'MAPPO',
                                  'PPO', 'PPO2', 'DISC', 'GePPO', 'GeDISC'],
                         help='Experiment name')
     parser.add_argument('--allow_eval', action='store_true',
@@ -72,6 +72,8 @@ def main():
     parser.add_argument('--seed', type=int, default=0,
                         help='Random seed')
     parser.add_argument('--uniform', action='store_true',
+                        help='Total steps trained')
+    parser.add_argument('--mappo_k', type=int, default=2,
                         help='Total steps trained')
     args = parser.parse_args()
 
@@ -159,6 +161,10 @@ def main():
     elif args.alg == 'PPO2':
         import pg.agents.ppo2 as PPO2
         agent = PPO2.PPOAgent(sess, env, horizon=2048,
+                              gamma=0.99, lam=0.95, fixed_lr=False)
+    elif args.alg == 'MAPPO':
+        import pg.agents.mappo as MAPPO
+        agent = MAPPO.PPOAgent(sess, env, horizon=2048, k=args.mappo_k,
                               gamma=0.99, lam=0.95, fixed_lr=False)
     elif args.alg == 'DISC':
         import pg.agents.disc as DISC
