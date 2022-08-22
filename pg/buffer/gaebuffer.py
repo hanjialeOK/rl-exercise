@@ -489,3 +489,187 @@ class ACERBuffer:
         self.ptr = 0
         self.count = 0
         self.n_trajs = 0
+
+
+class MAPPOBuffer:
+    '''
+    Openai spinningup implementation
+    '''
+
+    def __init__(self, env, horizon, k, gamma=0.99, lam=0.95, compute_v=None):
+        obs_shape = env.observation_space.shape
+        ac_shape = env.action_space.shape
+        obs_dtype = env.observation_space.dtype.name
+        ac_dtype = env.action_space.dtype.name
+        self.obs_buf = np.zeros((horizon, ) + obs_shape, dtype=obs_dtype)
+        self.obs2_buf = np.zeros((horizon, ) + obs_shape, dtype=obs_dtype)
+        self.ac_buf = np.zeros((horizon, ) + ac_shape, dtype=ac_dtype)
+        self.rew_buf = np.zeros((horizon, ), dtype=np.float32)
+        self.done_buf = np.zeros((horizon, ), dtype=np.float32)
+        self.ret_buf = np.zeros((horizon, ), dtype=np.float32)
+        self.adv_buf = np.zeros((horizon, ), dtype=np.float32)
+        self.val_buf = np.zeros((horizon, ), dtype=np.float32)
+        self.next_val_buf = np.zeros((horizon, ), dtype=np.float32)
+        self.neglogp_buf = np.zeros((horizon, k), dtype=np.float32)
+        self.obs_shape = obs_shape
+        self.ac_shape = ac_shape
+        self.max_size = horizon
+        self.k = k
+        self.gamma = gamma
+        self.lam = lam
+        self.ptr = 0
+        self.path_start_idx = self.ptr
+        self.compute_v = compute_v
+
+    def store(self, obs=None, ac=None, rew=None, done=None, obs2=None, val=None, neglogp=None, **kwargs):
+        assert self.ptr < self.max_size
+        # assert obs.shape == self.obs_shape
+        # assert ac.shape == self.ac_shape
+        self.obs_buf[self.ptr] = obs
+        self.obs2_buf[self.ptr] = obs2
+        self.ac_buf[self.ptr] = ac
+        self.rew_buf[self.ptr] = rew
+        self.done_buf[self.ptr] = done
+        self.val_buf[self.ptr] = val
+        self.neglogp_buf[self.ptr] = neglogp
+        self.ptr += 1
+
+    def finish_path(self):
+        start = self.path_start_idx
+
+        self.next_val_buf[start:self.ptr-1] = self.val_buf[start+1:self.ptr]
+
+        last_done = self.done_buf[self.ptr-1]
+        last_ob2 = self.obs2_buf[self.ptr-1]
+        last_val = 0. if last_done else self.compute_v(last_ob2)
+        self.next_val_buf[self.ptr-1] = last_val
+
+        # GAE-Lambda advantage calculation
+        lastgaelam = 0.0
+        for t in reversed(range(self.path_start_idx, self.ptr)):
+            delta = self.rew_buf[t] + \
+                self.gamma * self.next_val_buf[t] - self.val_buf[t]
+            self.adv_buf[t] = \
+                delta + self.gamma * self.lam * lastgaelam
+            lastgaelam = self.adv_buf[t]
+
+        self.ret_buf[start:self.ptr] = self.adv_buf[start:self.ptr] + \
+            self.val_buf[start:self.ptr]
+
+        self.path_start_idx = self.ptr
+
+    def get(self):
+        assert self.ptr == self.max_size
+
+        # Reset ptr
+        self.ptr = 0
+        self.path_start_idx = self.ptr
+
+        return [self.obs_buf,
+                self.ac_buf,
+                self.adv_buf,
+                self.ret_buf,
+                self.val_buf,
+                self.neglogp_buf]
+
+    def get_rms_data(self):
+        assert self.ptr == self.max_size
+        return [self.obs_buf,
+                self.ret_buf]
+
+    def reset(self):
+        self.ptr = 0
+        self.path_start_idx = self.ptr
+
+
+class QPPOBuffer:
+    '''
+    Openai spinningup implementation
+    '''
+
+    def __init__(self, env, horizon, gamma=0.99, lam=0.95, compute_v=None):
+        obs_shape = env.observation_space.shape
+        ac_shape = env.action_space.shape
+        obs_dtype = env.observation_space.dtype.name
+        ac_dtype = env.action_space.dtype.name
+        self.obs_buf = np.zeros((horizon, ) + obs_shape, dtype=obs_dtype)
+        self.obs2_buf = np.zeros((horizon, ) + obs_shape, dtype=obs_dtype)
+        self.ac_buf = np.zeros((horizon, ) + ac_shape, dtype=ac_dtype)
+        self.rew_buf = np.zeros((horizon, ), dtype=np.float32)
+        self.done_buf = np.zeros((horizon, ), dtype=np.float32)
+        self.ret_buf = np.zeros((horizon, ), dtype=np.float32)
+        self.adv_buf = np.zeros((horizon, ), dtype=np.float32)
+        self.val_buf = np.zeros((horizon, ), dtype=np.float32)
+        self.qval_buf = np.zeros((horizon, ), dtype=np.float32)
+        self.next_val_buf = np.zeros((horizon, ), dtype=np.float32)
+        self.neglogp_buf = np.zeros((horizon, ), dtype=np.float32)
+        self.obs_shape = obs_shape
+        self.ac_shape = ac_shape
+        self.max_size = horizon
+        self.gamma = gamma
+        self.lam = lam
+        self.ptr = 0
+        self.path_start_idx = self.ptr
+        self.compute_v = compute_v
+
+    def store(self, obs=None, ac=None, rew=None, done=None, obs2=None, val=None, neglogp=None, **kwargs):
+        assert self.ptr < self.max_size
+        # assert obs.shape == self.obs_shape
+        # assert ac.shape == self.ac_shape
+        self.obs_buf[self.ptr] = obs
+        self.obs2_buf[self.ptr] = obs2
+        self.ac_buf[self.ptr] = ac
+        self.rew_buf[self.ptr] = rew
+        self.done_buf[self.ptr] = done
+        self.val_buf[self.ptr] = val[0]
+        self.qval_buf[self.ptr] = val[1]
+        self.neglogp_buf[self.ptr] = neglogp
+        self.ptr += 1
+
+    def finish_path(self):
+        start = self.path_start_idx
+
+        self.next_val_buf[start:self.ptr-1] = self.val_buf[start+1:self.ptr]
+
+        last_done = self.done_buf[self.ptr-1]
+        last_ob2 = self.obs2_buf[self.ptr-1]
+        last_val = 0. if last_done else self.compute_v(last_ob2)
+        self.next_val_buf[self.ptr-1] = last_val
+
+        # GAE-Lambda advantage calculation
+        lastgaelam = 0.0
+        for t in reversed(range(self.path_start_idx, self.ptr)):
+            delta = self.rew_buf[t] + \
+                self.gamma * self.next_val_buf[t] - self.val_buf[t]
+            self.adv_buf[t] = \
+                delta + self.gamma * self.lam * lastgaelam
+            lastgaelam = self.adv_buf[t]
+
+        self.ret_buf[start:self.ptr] = self.adv_buf[start:self.ptr] + \
+            self.val_buf[start:self.ptr]
+
+        self.path_start_idx = self.ptr
+
+    def get(self):
+        assert self.ptr == self.max_size
+
+        # Reset ptr
+        self.ptr = 0
+        self.path_start_idx = self.ptr
+
+        return [self.obs_buf,
+                self.ac_buf,
+                self.adv_buf,
+                self.ret_buf,
+                self.val_buf,
+                self.qval_buf,
+                self.neglogp_buf]
+
+    def get_rms_data(self):
+        assert self.ptr == self.max_size
+        return [self.obs_buf,
+                self.ret_buf]
+
+    def reset(self):
+        self.ptr = 0
+        self.path_start_idx = self.ptr
