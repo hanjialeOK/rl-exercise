@@ -159,21 +159,21 @@ class PPOAgent(BaseAgent):
         entropy = tf.reduce_sum(dist.entropy(), axis=1)
         meanent = tf.reduce_mean(entropy)
 
-        q = self.discriminator(obs_ph, pi)
-        extra_loss = -tf.reduce_mean(q)
+        q_pi = self.discriminator(obs_ph, pi)
+        extra_loss = -tf.reduce_mean(q_pi)
 
-        qret = self.discriminator(obs_ph, ac_ph)
-        meanqret = tf.reduce_mean(qret)
-        q_loss = 0.5 * tf.reduce_mean(tf.square(qret - ret_ph))
+        q = self.discriminator(obs_ph, ac_ph)
+        meanq = tf.reduce_mean(q)
+        q_loss = 0.5 * tf.reduce_mean(tf.square(q - ret_ph))
 
         # if self.vf_clip:
         #     qvalclipped = qval_ph + \
-        #         tf.clip_by_value(qret - qval_ph, -self.clip_ratio, self.clip_ratio)
-        #     q_loss1 = tf.square(qret - ret_ph)
+        #         tf.clip_by_value(q - qval_ph, -self.clip_ratio, self.clip_ratio)
+        #     q_loss1 = tf.square(q - ret_ph)
         #     q_loss2 = tf.square(qvalclipped - ret_ph)
         #     q_loss = 0.5 * tf.reduce_mean(tf.maximum(q_loss1, q_loss2))
         # else:
-        #     q_loss = 0.5 * tf.reduce_mean(tf.square(qret - ret_ph))
+        #     q_loss = 0.5 * tf.reduce_mean(tf.square(q - ret_ph))
 
         v = self.critic(obs_ph)
 
@@ -231,7 +231,7 @@ class PPOAgent(BaseAgent):
         self.v1 = v1
         self.train_op = train_op
 
-        self.stats_list = [extra_loss, meanqret, pi_loss, vf_loss, q_loss, meanent, approxkl, absratio, ratioclipfrac, gradclipped]
+        self.stats_list = [extra_loss, meanq, pi_loss, vf_loss, q_loss, meanent, approxkl, absratio, ratioclipfrac, gradclipped]
         self.loss_names = ['extra_loss', 'q', 'pi_loss', 'vf_loss', 'q_loss', 'entropy', 'kl', 'absratio', 'ratioclipfrac', 'gradclipped']
         assert len(self.stats_list) == len(self.loss_names)
 
