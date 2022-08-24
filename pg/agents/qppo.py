@@ -78,6 +78,7 @@ class DiscriminatorMLP(tf.keras.Model):
         x = self.dense3(x)
         return tf.squeeze(x, axis=1)
 
+
 class PPOAgent(BaseAgent):
     def __init__(self, sess, env,
                  clip_ratio=0.2, lr=3e-4, train_iters=10, target_kl=0.01,
@@ -223,6 +224,11 @@ class PPOAgent(BaseAgent):
                 grads, self.max_grad_norm)
         gradclipped = _grad_norm > self.max_grad_norm if self.grad_clip else tf.zeros(())
         gradclipped = tf.cast(gradclipped, tf.float32)
+        # # Grads correction
+        # extra_grads_and_vars = optimizer.compute_gradients(extra_loss, var_list=pi_params)
+        # extra_grads, extra_vars = zip(*extra_grads_and_vars)
+        # for i in range(7):
+        #     grads[i] -= extra_grads[i] * self.max_grad_norm / tf.maximum(_grad_norm, self.max_grad_norm)
         grads_and_vars = list(zip(grads, vars))
 
         train_op = optimizer.apply_gradients(grads_and_vars)
