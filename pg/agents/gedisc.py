@@ -194,8 +194,8 @@ class PPOAgent(BaseAgent):
         absratio = tf.reduce_mean(tf.abs(ratio - 1.0) + 1.0)
         ratioclipped = tf.where(
             adv_ph > 0,
-            ratio > (center + self.clip_ratio),
-            ratio < (center - self.clip_ratio))
+            ratio > tf.minimum(center + self.clip_ratio, 1.0 + self.clip_ratio2),
+            ratio < tf.maximum(center - self.clip_ratio, 1.0 - self.clip_ratio2))
         ratioclipfrac = tf.reduce_mean(tf.cast(ratioclipped, tf.float32))
         tv_on = 0.5 * tf.reduce_mean(weights_ph * tf.abs(ratio - ratio_pik)*on_policy_ph)
         tv = 0.5 * tf.reduce_mean(weights_ph * tf.abs(ratio - ratio_pik))
