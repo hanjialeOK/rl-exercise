@@ -192,11 +192,17 @@ class PPOAgent(BaseAgent):
         # Info (useful to watch during learning)
         approxkl = 0.5 * tf.reduce_mean(tf.square(neglogp_pik_ph - neglogpac))
         absratio = tf.reduce_mean(tf.abs(ratio - 1.0) + 1.0)
-        ratioclipped = tf.where(
+        ratioclipped1 = tf.where(
             adv_ph > 0,
-            ratio > tf.minimum(center + self.clip_ratio, 1.0 + self.clip_ratio2),
-            ratio < tf.maximum(center - self.clip_ratio, 1.0 - self.clip_ratio2))
-        ratioclipfrac = tf.reduce_mean(tf.cast(ratioclipped, tf.float32))
+            ratio > center + self.clip_ratio,
+            ratio < center - self.clip_ratio)
+        ratioclipped2 = tf.where(
+            adv_ph > 0,
+            ratio > 1.0 + self.clip_ratio2,
+            ratio < 1.0 - self.clip_ratio2)
+        ratioclipfrac1 = tf.reduce_mean(tf.cast(ratioclipped1, tf.float32))
+        ratioclipfrac2 = tf.reduce_mean(tf.cast(ratioclipped2, tf.float32))
+        ratioclipfrac = tf.reduce_mean(tf.cast(tf.logical_or(ratioclipped1, ratioclipped2), tf.float32))
         tv_on = 0.5 * tf.reduce_mean(weights_ph * tf.abs(ratio - ratio_pik)*on_policy_ph)
         tv = 0.5 * tf.reduce_mean(weights_ph * tf.abs(ratio - ratio_pik))
 
@@ -221,9 +227,9 @@ class PPOAgent(BaseAgent):
         self.train_op = train_op
 
         self.stats_list = [pi_loss_ctl, pi_loss, vf_loss, meanent, meankl,
-                           absratio, ratioclipfrac, gradclipped, tv_on, tv]
+                           absratio, ratioclipfrac1, ratioclipfrac2, ratioclipfrac, gradclipped, tv_on, tv]
         self.loss_names = ['pi_loss_ctl', 'pi_loss', 'vf_loss', 'entropy', 'kl',
-                           'absratio', 'ratioclipfrac', 'gradclipped', 'tv_on', 'tv']
+                           'absratio', 'ratioclipfrac1', 'ratioclipfrac2', 'ratioclipfrac', 'gradclipped', 'tv_on', 'tv']
         assert len(self.stats_list) == len(self.loss_names)
 
     def _build_sync_op(self):
