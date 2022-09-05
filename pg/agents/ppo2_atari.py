@@ -36,8 +36,7 @@ class ActorCriticCNN(tf.keras.Model):
             kernel_initializer=tf_ortho_init(1.0), name='vf')
 
     def call(self, state):
-        x = tf.cast(state, tf.float32)
-        x /= 255
+        x = tf.cast(state, tf.float32) / 255.0
         x = self.conv1(x)
         x = self.conv2(x)
         x = self.conv3(x)
