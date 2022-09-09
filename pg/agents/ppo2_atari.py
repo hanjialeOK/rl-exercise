@@ -50,7 +50,7 @@ class ActorCriticCNN(tf.keras.Model):
 class PPOAgent(BaseAgent):
     def __init__(self, sess, env, nenv=8,
                  clip_ratio=0.1, lr=2.5e-4, train_iters=4, target_kl=0.01,
-                 ent_coef=0.01, vf_coef=1.0, max_grad_norm=0.5,
+                 ent_coef=0.01, vf_coef=0.5, max_grad_norm=0.5,
                  horizon=128, nminibatches=4, gamma=0.99, lam=0.95,
                  grad_clip=True, vf_clip=True, fixed_lr=False):
         self.sess = sess
@@ -78,10 +78,12 @@ class PPOAgent(BaseAgent):
             compute_v=self.compute_v)
         self._build_network()
         self._build_train_op()
+        self.sync_op = self._build_sync_op()
         super().__init__()
 
     def _build_network(self):
         self.actorcritic = ActorCriticCNN(self.ac_shape, name='ppo')
+        self.actorcritic_pik = ActorCriticCNN(self.ac_shape, name='ppo_pik')
 
     def _build_train_op(self):
         self.ob1_ph = ob1_ph = tf.compat.v1.placeholder(
@@ -117,6 +119,12 @@ class PPOAgent(BaseAgent):
         neglogpac = dist.neglogp(ac_ph)
         entropy = dist.entropy()
         meanent = tf.reduce_mean(entropy)
+
+        mu_pik, _ = self.actorcritic_pik(obs_ph)
+        mu_pik = tf.stop_gradient(mu_pik)
+        dist_pik = CategoricalPd(mu_pik)
+        kl = dist_pik.kl(dist)
+        meankl = tf.reduce_mean(kl)
 
         if self.vf_clip:
             valclipped = val_ph + \
@@ -166,17 +174,28 @@ class PPOAgent(BaseAgent):
         self.v1 = v1
         self.train_op = train_op
 
-        self.stats_list = [pi_loss, vf_loss, meanent, approxkl, absratio, ratioclipfrac, gradclipped]
-        self.loss_names = ['pi_loss', 'vf_loss', 'entropy', 'kl', 'absratio', 'ratioclipfrac', 'gradclipped']
+        self.stats_list = [pi_loss, vf_loss, meanent, approxkl, meankl, absratio, ratioclipfrac, gradclipped]
+        self.loss_names = ['pi_loss', 'vf_loss', 'entropy', 'kl', 'kl2', 'absratio', 'ratioclipfrac', 'gradclipped']
         assert len(self.stats_list) == len(self.loss_names)
+
+    def _build_sync_op(self):
+        sync_qt_ops = []
+        pi_params = self._get_var_list('pi')
+        pi_params_old = self._get_var_list('pik')
+
+        for (newv, oldv) in zip(pi_params, pi_params_old):
+            sync_qt_ops.append(oldv.assign(newv, use_locking=True))
+        return sync_qt_ops
 
     def update(self, frac, logger):
         buf_data = self.buffer.get()
         [obs_all, ac_all, adv_all, ret_all, val_all, neglogp_all] = buf_data
         assert obs_all.shape[0] == self.nbatch
 
-        lr = self.lr if self.fixed_lr else self.lr * frac
-        # lr = self.lr if self.fixed_lr else np.maximum(self.lr * frac, 1e-4)
+        # lr = self.lr if self.fixed_lr else self.lr * frac
+        lr = self.lr if self.fixed_lr else np.maximum(self.lr * frac, 1e-4)
+
+        self.sess.run(self.sync_op)
 
         indices = np.arange(self.nbatch)
         minibatch = self.nbatch // self.nminibatches
