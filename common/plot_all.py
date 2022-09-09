@@ -11,7 +11,7 @@ import matplotlib.ticker as ticker
 DIV_LINE_WIDTH = 50
 
 
-def plot_data(data, xaxis='Step', value="AvgEpRet", condition="Condition1", smooth=1, ax=None, **kwargs):
+def plot_data(data, xaxis='Step', value="AvgEpRet", condition="Condition1", smooth=1, ax=None, colors=None, **kwargs):
     if smooth > 1:
         """
         smooth data with moving window average.
@@ -31,8 +31,8 @@ def plot_data(data, xaxis='Step', value="AvgEpRet", condition="Condition1", smoo
         data = pd.concat(data, ignore_index=True)
     # sns.set(style="darkgrid", palette="deep", font_scale=1.5)
     # ax.margins(0.05)
-    sns.tsplot(data=data, time=xaxis, value=value, unit="Unit", legend=True,
-               condition=condition, ci=50, ax=ax, linewidth=2.5, **kwargs)
+    sns.tsplot(data=data, time=xaxis, value=value, unit="Unit", legend=True, color=colors,
+               condition=condition, ci='sd', ax=ax, linewidth=2.5, **kwargs)
     """
     If you upgrade to any version of Seaborn greater than 0.8.1, switch from
     tsplot to lineplot replacing L29 with:
@@ -119,19 +119,15 @@ def get_datasets(logdir, legend=None, tag=None, data_file='progress.txt'):
 def main(args):
     envs = ['Ant-v2', 'BipedalWalkerHardcore-v3', 'HalfCheetah-v2', 'Hopper-v2', 'Humanoid-v2', 'HumanoidStandup-v2',
             'InvertedDoublePendulum-v2', 'InvertedPendulum-v2', 'Swimmer-v2', 'Walker2d-v2']
-    algs = ['PPO_baseline', 'GePPO_baseline',
-            'GeDISC_PPO_0.8_baseline',
-            'GeDISC_0.2_0.8',
-            'GeDISC_0.4_0.8',
-            'GeDISC_thresh_0.3',
-            'GeDISC_thresh_0.4_0.2']
-    legends = ['PPO', 'GePPO', 'GeDISC_PPO_0.8',
-               'GeDISC_0.2_0.8', 'GeDISC_0.4_0.8', 'GeDISC_thresh_0.3', 'GeDISC_thresh_0.4_0.2']
+    algs = ['PPO_baseline', 'GePPO_baseline', 'DISC_baseline1', 'GeDISC_0.4_0.8']
+    legends = ['PPO', 'GePPO', 'DISC', 'GeDISC']
+    # colors = None
+    colors = ['gray', 'green', 'red', 'blue']
     version = 'v2'
 
     nsize = (2, 5)
 
-    sns.set(style="darkgrid", palette="deep", font_scale=1.8)
+    sns.set(style="darkgrid", palette="deep", font_scale=1.5)
     fig, axis = plt.subplots(nrows=nsize[0], ncols=nsize[1],
                              figsize=(6.4*nsize[1], 4.8*nsize[0]*1.1))
 
@@ -171,7 +167,7 @@ def main(args):
 
         condition = 'Condition2' if args.count else 'Condition1'
         plot_data(data, xaxis=args.xaxis, value=args.value, condition=condition,
-                  smooth=args.smooth, ax=ax)
+                  smooth=args.smooth, ax=ax, colors=colors)
 
         ax.set_title(env_name)
         ax.set_xlabel('')
