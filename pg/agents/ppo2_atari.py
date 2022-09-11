@@ -175,7 +175,7 @@ class PPOAgent(BaseAgent):
         self.train_op = train_op
 
         self.stats_list = [pi_loss, vf_loss, meanent, approxkl, meankl, absratio, ratioclipfrac, gradclipped]
-        self.loss_names = ['pi_loss', 'vf_loss', 'entropy', 'kl', 'kl2', 'absratio', 'ratioclipfrac', 'gradclipped']
+        self.loss_names = ['pi_loss', 'vf_loss', 'entropy', 'approxkl', 'kl', 'absratio', 'ratioclipfrac', 'gradclipped']
         assert len(self.stats_list) == len(self.loss_names)
 
     def _build_sync_op(self):
@@ -192,8 +192,8 @@ class PPOAgent(BaseAgent):
         [obs_all, ac_all, adv_all, ret_all, val_all, neglogp_all] = buf_data
         assert obs_all.shape[0] == self.nbatch
 
-        # lr = self.lr if self.fixed_lr else self.lr * frac
-        lr = self.lr if self.fixed_lr else np.maximum(self.lr * frac, 1e-4)
+        lr = self.lr if self.fixed_lr else self.lr * frac
+        # lr = self.lr if self.fixed_lr else np.maximum(self.lr * frac, 1e-4)
 
         self.sess.run(self.sync_op)
 
