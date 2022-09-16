@@ -226,9 +226,9 @@ class PPOAgent(BaseAgent):
         self.v = v
         self.train_op = train_op
 
-        self.stats_list = [pi_loss_ctl, pi_loss, vf_loss, meanent, meankl,
+        self.stats_list = [pi_loss_ctl, pi_loss, vf_loss, meanent, meankl, approxkl,
                            absratio, ratioclipfrac1, ratioclipfrac2, ratioclipfrac, gradclipped, tv_on, tv]
-        self.loss_names = ['pi_loss_ctl', 'pi_loss', 'vf_loss', 'entropy', 'kl',
+        self.loss_names = ['pi_loss_ctl', 'pi_loss', 'vf_loss', 'entropy', 'kl', 'approxkl',
                            'absratio', 'ratioclipfrac1', 'ratioclipfrac2', 'ratioclipfrac', 'gradclipped', 'tv_on', 'tv']
         assert len(self.stats_list) == len(self.loss_names)
 
