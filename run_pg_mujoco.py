@@ -75,6 +75,8 @@ def main():
                         help='Total steps trained')
     parser.add_argument('--mappo_k', type=int, default=2,
                         help='Total steps trained')
+    parser.add_argument('--pi', type=int, default=10,
+                        help='Total steps trained')
     args = parser.parse_args()
 
     if not os.path.exists(args.data_dir):
@@ -116,7 +118,7 @@ def main():
     # Our own simple warpper
     # env = VecNormalize2(env)
     # Openai baselines
-    env = make_vec_env(args.env, num_env=1, seed=args.seed)
+    env = make_vec_env(args.env, 'mujoco', num_env=1, seed=args.seed)
     env = VecNormalize(env)
 
     gpu_options = tf.compat.v1.GPUOptions(allow_growth=True)
@@ -160,7 +162,7 @@ def main():
                              gamma=0.99, lam=0.95, fixed_lr=False)
     elif args.alg == 'PPO2':
         import pg.agents.ppo2 as PPO2
-        agent = PPO2.PPOAgent(sess, env, horizon=2048,
+        agent = PPO2.PPOAgent(sess, env, horizon=2048, pi_train_iters=args.pi,
                               gamma=0.99, lam=0.95, fixed_lr=False)
     elif args.alg == 'MAPPO':
         import pg.agents.mappo as MAPPO
@@ -168,7 +170,7 @@ def main():
                               gamma=0.99, lam=0.95, fixed_lr=False)
     elif args.alg == 'QPPO':
         import pg.agents.qppo as QPPO
-        agent = QPPO.PPOAgent(sess, env, horizon=2048,
+        agent = QPPO.PPOAgent(sess, env, horizon=2048, pi_train_iters=args.pi,
                               gamma=0.99, lam=0.95, fixed_lr=False)
     elif args.alg == 'DISC':
         import pg.agents.disc as DISC
@@ -295,22 +297,13 @@ def main():
         if update % 100 == 0 and args.allow_eval:
             raise NotImplementedError
             avg_ret, evg_len = evaluate(env_eval, agent)
-            # Summary
-            eval_summary = tf.compat.v1.Summary(value=[
-                tf.compat.v1.Summary.Value(
-                    tag='eval/avg_len', simple_value=evg_len),
-                tf.compat.v1.Summary.Value(
-                    tag='eval/avg_reward', simple_value=avg_ret)
-            ])
-            summary_writer.add_summary(eval_summary, step)
+            logger.logkv('eval/avg_len', evg_len)
+            logger.logkv('eval/avg_reward', avg_ret)
             # Save the best weights
             if avg_ret >= max_ep_ret and args.save_model:
                 print(f'Saving weights into {checkpoint_dir}')
                 agent.bundle(checkpoint_dir, update)
                 max_ep_ret = avg_ret
-            # Log data
-            with open(eval_txt, 'a') as f:
-                f.write(f"{step}\t{avg_ret}\n")
 
     time_delta = int(time.time() - start_time)
     m, s = divmod(time_delta, 60)
