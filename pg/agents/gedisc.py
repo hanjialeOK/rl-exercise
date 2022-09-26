@@ -354,6 +354,8 @@ class PPOAgent(BaseAgent):
         logger.logkv("loss/trajs_active", n_trajs_active)
         logger.logkv("loss/beta", self.beta)
         logger.logkv("loss/thresh", thresh)
+        logger.logkv("loss/clip1", self.clip_ratio)
+        logger.logkv("loss/clip2", self.clip_ratio2)
 
         self.buffer.update()
 
