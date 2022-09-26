@@ -36,8 +36,7 @@ class ActorCriticCNN(tf.keras.Model):
             kernel_initializer=tf_ortho_init(1.0), name='vf')
 
     def call(self, state):
-        x = tf.cast(state, tf.float32)
-        x /= 255
+        x = tf.cast(state, tf.float32) / 255.0
         x = self.conv1(x)
         x = self.conv2(x)
         x = self.conv3(x)
@@ -51,10 +50,10 @@ class ActorCriticCNN(tf.keras.Model):
 class PPOAgent(BaseAgent):
     def __init__(self, sess, env, nenv=8,
                  clip_ratio=0.2, lr=2.5e-4, train_iters=4, target_kl=1e-3,
-                 ent_coef=0.01, vf_coef=1, max_grad_norm=0.5,
+                 ent_coef=0.01, vf_coef=0.5, max_grad_norm=0.5,
                  horizon=128, nminibatches=4, gamma=0.99, lam=0.95,
                  grad_clip=False, vf_clip=True, fixed_lr=False, beta=1,
-                 thresh=0.4, alpha=0.03, nlatest=64, uniform=True,
+                 thresh=0.2, alpha=0.03, nlatest=32, uniform=True,
                  geppo=True, clip_ratio2=0.4):
         self.sess = sess
         self.obs_shape = (84, 84, 4)
@@ -165,7 +164,7 @@ class PPOAgent(BaseAgent):
         pi_loss2 = -adv_ph * ratio_clip
         pi_loss = tf.reduce_mean(weights_ph * tf.maximum(pi_loss1, pi_loss2))
 
-        # pi_loss_ctl = 0.5 * tf.reduce_mean(kl*on_policy_ph)
+        # pi_loss_ctl = tf.reduce_mean(kl*on_policy_ph)
         pi_loss_ctl = 0.5 * tf.reduce_mean(tf.square(neglogp_old_ph - neglogpac)*on_policy_ph)
         # pi_loss_ctl = 0.5 * tf.reduce_mean((ratio - 1.0 - tf.log(ratio))*on_policy_ph)
         pi_loss += beta_ph * pi_loss_ctl
@@ -210,9 +209,9 @@ class PPOAgent(BaseAgent):
         self.v = v
         self.train_op = train_op
 
-        self.stats_list = [pi_loss_ctl, pi_loss, vf_loss, meanent, meankl,
+        self.stats_list = [pi_loss_ctl, pi_loss, vf_loss, meanent, meankl, approxkl,
                            absratio, ratioclipfrac1, ratioclipfrac2, ratioclipfrac, gradclipped, tv_on, tv]
-        self.loss_names = ['pi_loss_ctl', 'pi_loss', 'vf_loss', 'entropy', 'kl',
+        self.loss_names = ['pi_loss_ctl', 'pi_loss', 'vf_loss', 'entropy', 'kl', 'approxkl',
                            'absratio', 'ratioclipfrac1', 'ratioclipfrac2', 'ratioclipfrac', 'gradclipped', 'tv_on', 'tv']
         assert len(self.stats_list) == len(self.loss_names)
 
@@ -262,7 +261,8 @@ class PPOAgent(BaseAgent):
         on_policy = np.zeros(obs_filted.shape[0])
         on_policy[-self.nbatch:] = n_trajs_active
 
-        lr = self.lr if self.fixed_lr else np.maximum(self.lr * frac, 1e-4)
+        lr = self.lr if self.fixed_lr else self.lr * frac
+        # lr = self.lr if self.fixed_lr else np.maximum(self.lr * frac, 1e-4)
         # lr = self.lr
         # self.thresh = np.maximum(self.thresh * frac, 0.1)
 
@@ -339,6 +339,9 @@ class PPOAgent(BaseAgent):
         logger.logkv("loss/beta", self.beta)
         logger.logkv("loss/thresh", thresh)
         logger.logkv("loss/train_iter", self.train_iters)
+        logger.logkv("loss/target_kl", self.target_kl)
+        logger.logkv("loss/clip1", self.clip_ratio)
+        logger.logkv("loss/clip2", self.clip_ratio2)
 
         self.buffer.update()
 
