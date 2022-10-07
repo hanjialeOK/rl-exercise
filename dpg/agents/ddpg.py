@@ -4,11 +4,9 @@ import os
 
 import dpg.buffer.replaybuffer as Buffer
 
-from termcolor import cprint
-
 
 class ActorMLP(tf.keras.Model):
-    def __init__(self, act_dim, max_ac, name):
+    def __init__(self, ac_dim, max_ac, name):
         super(ActorMLP, self).__init__(name=name)
         self.ac_limit = max_ac
         activation_fn = tf.keras.activations.relu
@@ -21,7 +19,7 @@ class ActorMLP(tf.keras.Model):
             256, activation=activation_fn,
             kernel_initializer=kernel_initializer, name='fc2')
         self.dense3 = tf.keras.layers.Dense(
-            act_dim[0], activation=output_activation_fn,
+            ac_dim[0], activation=output_activation_fn,
             kernel_initializer=kernel_initializer, name='fc3')
 
     def call(self, state):
@@ -56,13 +54,13 @@ class CriticMLP(tf.keras.Model):
 
 
 class DDPGAgent():
-    def __init__(self, sess, obs_dim, act_dim, ac_limit,
+    def __init__(self, sess, obs_dim, ac_dim, ac_limit,
                  mem_capacity=int(1e6), batch_size=256,
                  gamma=0.99, actor_lr=3e-4, critic_lr=3e-4,
                  tau=0.005, noise_scale=0.1):
         self.sess = sess
         self.obs_dim = obs_dim
-        self.act_dim = act_dim
+        self.ac_dim = ac_dim
         self.ac_limit = ac_limit
         self.batch_size = batch_size
         self.gamma = gamma
@@ -71,11 +69,9 @@ class DDPGAgent():
         self.tau = tau
         self.noise_scale = noise_scale
 
-        self.buffer = Buffer.ReplayBuffer(obs_dim, act_dim, mem_capacity)
+        self.buffer = Buffer.ReplayBuffer(obs_dim, ac_dim, mem_capacity)
         self._build_network()
-        [self.obs_ph, self.all_phs, self.pi,
-         self.target_update, self.target_init,
-         self.train_actor_op, self.train_critic_op] = self._build_train_op()
+        self._build_train_op()
 
     # Note: Required to be called after _build_train_op(), otherwise return []
     def _get_var_list(self, name='online'):
@@ -86,25 +82,23 @@ class DDPGAgent():
         return vars
 
     def _build_network(self):
-        self.actor = ActorMLP(self.act_dim, self.ac_limit, 'online/actor')
+        self.actor = ActorMLP(self.ac_dim, self.ac_limit, 'online/actor')
         self.critic = CriticMLP('online/critic')
         self.actor_target = ActorMLP(
-            self.act_dim, self.ac_limit, 'target/actor')
+            self.ac_dim, self.ac_limit, 'target/actor')
         self.critic_target = CriticMLP('target/critic')
 
     def _build_train_op(self):
-        obs_ph = tf.compat.v1.placeholder(
+        self.obs_ph = obs_ph = tf.compat.v1.placeholder(
             shape=(None, ) + self.obs_dim, dtype=tf.float32, name="obs_ph")
-        next_obs_ph = tf.compat.v1.placeholder(
+        self.next_obs_ph = next_obs_ph = tf.compat.v1.placeholder(
             shape=(None, ) + self.obs_dim, dtype=tf.float32, name="next_obs_ph")
-        act_ph = tf.compat.v1.placeholder(
-            shape=(None, ) + self.act_dim, dtype=tf.float32, name="act_ph")
-        rew_ph = tf.compat.v1.placeholder(
+        self.ac_ph = ac_ph = tf.compat.v1.placeholder(
+            shape=(None, ) + self.ac_dim, dtype=tf.float32, name="ac_ph")
+        self.rew_ph = rew_ph = tf.compat.v1.placeholder(
             shape=[None, ], dtype=tf.float32, name="rew_ph")
-        done_ph = tf.compat.v1.placeholder(
+        self.done_ph = done_ph = tf.compat.v1.placeholder(
             shape=[None, ], dtype=tf.float32, name="done_ph")
-
-        all_phs = [obs_ph, next_obs_ph, act_ph, rew_ph, done_ph]
 
         pi = self.actor(obs_ph)
         actor_loss = tf.reduce_mean(-self.critic(obs_ph, pi))
@@ -114,7 +108,7 @@ class DDPGAgent():
         target = rew_ph + (1 - done_ph) * self.gamma * target_q_next
         target_nograd = tf.stop_gradient(target)
 
-        q_value = self.critic(obs_ph, act_ph)
+        q_value = self.critic(obs_ph, ac_ph)
 
         critic_loss = tf.reduce_mean((q_value - target_nograd) ** 2)
 
@@ -142,9 +136,16 @@ class DDPGAgent():
         for (w_online, w_target) in zip(trainable_online, trainable_target):
             target_init.append(w_target.assign(w_online, use_locking=True))
 
-        return [obs_ph, all_phs, pi,
-                target_update, target_init,
-                train_actor_op, train_critic_op]
+        self.pi = pi
+        self.target_update = target_update
+        self.target_init = target_init
+        self.train_actor_op = train_actor_op
+        self.train_critic_op = train_critic_op
+
+        meanq = tf.reduce_mean(q_value, axis=-1)
+        self.stats_list = [actor_loss, critic_loss, meanq]
+        self.loss_names = ['actor_loss', 'critic_loss', 'q_value']
+        assert len(self.stats_list) == len(self.loss_names)
 
     def select_action(self, obs, noise=True):
         pi = self.sess.run(
@@ -152,24 +153,32 @@ class DDPGAgent():
         ac = pi[0]
         if noise:
             ac_noise = np.random.normal(
-                0, self.ac_limit * self.noise_scale, size=self.act_dim)
+                0, self.ac_limit * self.noise_scale, size=self.ac_dim)
             ac = np.clip(ac + ac_noise, -self.ac_limit, self.ac_limit)
         return ac
 
     def target_params_init(self, init=False):
         self.sess.run(self.target_init)
 
-    def update(self):
+    def update(self, logger):
         buf_data = self.buffer.sample_batch(self.batch_size)
+        [obs, next_obs, ac, rew, done] = buf_data
 
-        inputs = {k: v for k, v in zip(self.all_phs, buf_data)}
+        inputs = {
+            self.obs_ph: obs,
+            self.next_obs_ph: next_obs,
+            self.ac_ph: ac,
+            self.rew_ph: rew,
+            self.done_ph: done
+        }
 
-        self.sess.run([self.train_actor_op, self.train_critic_op],
-                      feed_dict=inputs)
+        losses = self.sess.run(
+            self.stats_list + [self.train_actor_op, self.train_critic_op], feed_dict=inputs)[:-2]
+        # for (lossval, lossname) in zip(losses, self.loss_names):
+        #     logger.logkv('loss/' + lossname, lossval)
+        # logger.logkv("loss/actor_lr", self.actor_lr)
+        # logger.logkv("loss/critic_lr", self.critic_lr)
         self.sess.run(self.target_update)
-
-    def store_transition(self, obs, next_obs, action, reward, done):
-        self.buffer.store(obs, next_obs, action, reward, done)
 
     def bundle(self, checkpoint_dir, iteration):
         if not os.path.exists(checkpoint_dir):

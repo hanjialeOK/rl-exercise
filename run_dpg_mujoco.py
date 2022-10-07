@@ -4,13 +4,11 @@ import gym
 import time
 import os
 import argparse
-
-import dpg.agents.ddpg as DDPG
-import dpg.agents.td3 as TD3
-import dpg.agents.sac as SAC
+import random
+import collections
 
 from termcolor import cprint, colored
-from common.serialization_utils import convert_json, save_json
+from common.logger import Logger
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
@@ -44,35 +42,34 @@ def evaluate(env_eval, agent, num_ep=10):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dir_name', type=str, default=None, help='Dir name')
+    parser.add_argument('--dir_name', type=str, default='default', help='Dir name')
     parser.add_argument('--data_dir', type=str, default='/data/hanjl',
                         help='Data disk dir')
-    parser.add_argument('--env_name', '--env', type=str,
+    parser.add_argument('--env', type=str,
                         default='HalfCheetah-v2')
-    parser.add_argument('--exp_name', type=str, default='DDPG',
+    parser.add_argument('--alg', type=str, default='DDPG',
                         choices=['DPG', 'DDPG', 'TD3', 'SAC'],
                         help='Experiment name',)
     parser.add_argument('--allow_eval', action='store_true',
                         help='Whether to eval agent')
     parser.add_argument('--save_model', action='store_true',
                         help='Whether to save model')
+    parser.add_argument('--total_steps', type=float, default=1e6,
+                        help='Total steps trained')
+    parser.add_argument('--seed', type=int, default=0,
+                        help='Random seed')
     args = parser.parse_args()
 
     if not os.path.exists(args.data_dir):
         raise
 
     timestamp = time.strftime("%Y-%m-%d-%H_%M_%S", time.localtime(time.time()))
-    dir_name = args.dir_name or (args.exp_name + '-' + timestamp)
-    exp_name = args.exp_name
-    env_name = args.env_name
-    base_dir = os.path.join(args.data_dir, f"my_results/{env_name}/{dir_name}")
+    base_name = args.alg + '_' + f'seed{args.seed}' + '_' + timestamp
+    base_dir = os.path.join(
+        args.data_dir, f"my_results/{args.env}/{args.dir_name}/{base_name}")
     if not os.path.exists(base_dir):
         os.makedirs(base_dir)
-
-    # Dump config.
-    # locals() can only be put at main(), instead of __main__.
-    config = convert_json(locals())
-    save_json(config, base_dir)
+    total_steps = int(args.total_steps)
 
     # Create dir
     summary_dir = os.path.join(base_dir, "tf1_summary")
@@ -81,26 +78,24 @@ def main():
     checkpoint_dir = os.path.join(base_dir, 'checkpoints')
     if not os.path.exists(checkpoint_dir):
         os.makedirs(checkpoint_dir)
-    progress_txt = os.path.join(base_dir, 'progress.txt')
-    with open(progress_txt, 'w') as f:
-        f.write('Step\tValue\n')
+    progress_csv = os.path.join(base_dir, 'progress.csv')
+    log_txt = os.path.join(base_dir, 'log.txt')
+    summary_writer = tf.compat.v1.summary.FileWriter(summary_dir)
+    logger = Logger(progress_csv, log_txt, summary_writer)
 
     # Random seed
-    seed = int(time.time()) % 1000
-    tf.compat.v1.set_random_seed(seed)
-    np.random.seed(seed)
+    tf.compat.v1.set_random_seed(args.seed)
+    np.random.seed(args.seed)
+    random.seed(args.seed)
 
     # Environment
-    env = gym.make(env_name)
-    env.seed(seed)
-    env_eval = gym.make(env_name)
-    env_eval.seed(seed + 1)
+    env = gym.make(args.env)
+    env.seed(args.seed)
+    env_eval = gym.make(args.env)
+    env_eval.seed(args.seed)
     obs_dim = env.observation_space.shape
     act_dim = env.action_space.shape
     max_action = float(env.action_space.high[0])
-
-    # Tensorboard
-    summary_writer = tf.compat.v1.summary.FileWriter(summary_dir)
 
     # Experience buffer
     gpu_options = tf.compat.v1.GPUOptions(allow_growth=True)
@@ -120,37 +115,47 @@ def main():
            f'{gpu_list}\n',
            color='cyan', attrs=['bold'])
 
-    if exp_name == 'DPG':
+    if args.alg == 'DPG':
         raise NotImplementedError
-    elif exp_name == 'DDPG':
+    elif args.alg == 'DDPG':
+        import dpg.agents.ddpg as DDPG
         agent = DDPG.DDPGAgent(sess, obs_dim, act_dim,
                                max_action, noise_scale=0.1)
-    elif exp_name == 'TD3':
+    elif args.alg == 'TD3':
+        import dpg.agents.td3 as TD3
         agent = TD3.TD3Agent(sess, obs_dim, act_dim,
                              max_action, noise_scale=0.1)
-    elif exp_name == 'SAC':
+    elif args.alg == 'SAC':
+        import dpg.agents.sac as SAC
         agent = SAC.SACAgent(sess, obs_dim, act_dim, max_action)
     else:
-        raise ValueError(f'Unknown agent: {exp_name}')
+        raise ValueError(f'Unknown agent: {args.alg}')
 
+    tf.compat.v1.keras.backend.set_session(sess)
     sess.run(tf.compat.v1.global_variables_initializer())
     agent.target_params_init()
 
     # Params
     total_steps = int(1e6)
     start_steps = int(25e3)
+    log_interval = 2048
     eval_freq = int(5e3)
 
-    cprint(f'Running experiment: {exp_name}\n', color='cyan', attrs=['bold'])
+    cprint(f'Running experiment...\n'
+           f'Env: {args.env}, Alg: {args.alg}\n'
+           f'Logging dir: {base_dir}\n',
+           color='cyan', attrs=['bold'])
 
     # Start
+    epinfobuf = collections.deque(maxlen=100)
     start_time = time.time()
     obs = env.reset()
     ep_ret, ep_len = 0, 0
     ep_count = 0
+    max_ep_len = env.spec.max_episode_steps
 
     for t in range(1, total_steps + 1):
-        if t > start_steps:
+        if t >= start_steps:
             ac = agent.select_action(obs, noise=True)
         else:
             ac = env.action_space.sample()
@@ -159,54 +164,47 @@ def main():
         ep_ret += reward
         ep_len += 1
 
-        terminal = False if ep_len == env._max_episode_steps else done
-
-        agent.store_transition(obs, next_obs, ac, reward, terminal)
+        done = False if ep_len == max_ep_len else done
+        agent.buffer.store(obs, next_obs, ac, reward, done)
 
         obs = next_obs
 
-        if done:
-            # Episode summary
-            ep_count += 1
-            episode_summary = tf.compat.v1.Summary(value=[
-                tf.compat.v1.Summary.Value(
-                    tag="episode_info/reward", simple_value=ep_ret),
-                tf.compat.v1.Summary.Value(
-                    tag="episode_info/length", simple_value=ep_len)
-            ])
-            summary_writer.add_summary(episode_summary, ep_count)
-            ep_ret_text = colored(f'{ep_ret:.1f}',
-                                  color='green', attrs=['bold'])
-            print(f'Training {exp_name}: {t/total_steps:.1%}, '
-                  f'ep_len: {ep_len}, '
-                  f'ep_ret: {ep_ret_text}, ')
-            # Episode restart
+        if done or ep_len == max_ep_len:
+            epinfobuf.append({'r': ep_ret, 'l': ep_len})
             obs = env.reset()
-            ep_ret, ep_len = 0, 0
+            ep_ret = 0.
+            ep_len = 0
 
-        if t > start_steps:
-            agent.update()
+        if t >= start_steps:
+            agent.update(logger)
+
+        if t % log_interval == 0:
+            avg_ep_ret = np.mean([epinfo['r'] for epinfo in epinfobuf])
+            avg_ep_len = np.mean([epinfo['l'] for epinfo in epinfobuf])
+
+            logger.logkv("train/timesteps", t)
+            logger.logkv("train/avgeplen", avg_ep_len)
+            logger.logkv("train/avgepret", avg_ep_ret)
+
+            logger.loginfo('env', args.env)
+            logger.loginfo('alg', args.alg)
+            logger.loginfo('totalsteps', total_steps)
+            logger.loginfo('progress', f'{t/total_steps:.1%}')
+
+            logger.dumpkvs(timestep=t)
 
         # Evaluate
         if t % eval_freq == 0 and args.allow_eval:
+            raise NotImplementedError
             avg_ret, evg_len = evaluate(
                 env_eval, agent, num_ep=10)
-            # Summary
-            eval_summary = tf.compat.v1.Summary(value=[
-                tf.compat.v1.Summary.Value(
-                    tag='eval/avg_len', simple_value=evg_len),
-                tf.compat.v1.Summary.Value(
-                    tag='eval/avg_reward', simple_value=avg_ret)
-            ])
-            summary_writer.add_summary(eval_summary, t)
+            logger.logkv('eval/avg_len', evg_len)
+            logger.logkv('eval/avg_reward', avg_ret)
             # Save the best weights
             if avg_ret >= max_ep_ret and args.save_model:
                 print(f'Saving weights into {checkpoint_dir}')
                 agent.bundle(checkpoint_dir, t // eval_freq)
                 max_ep_ret = avg_ret
-            # Log data
-            with open(progress_txt, 'a') as f:
-                f.write(f"{t}\t{avg_ret}\n")
 
     time_delta = int(time.time() - start_time)
     m, s = divmod(time_delta, 60)
