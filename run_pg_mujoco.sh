@@ -22,7 +22,7 @@ GPU0="${5:=0}"
 GPU1="${6:=1}"
 SECONDS=0
 
-echo "Running ${BOLD}${ALGO}${RESET} of rl-exercise in ${BOLD}${ENV}${RESET} for six experiments..."
+echo "Running ${BOLD}${ALGO}${RESET} of rl-exercise in ${BOLD}${ENV}${RESET} for 10 experiments..."
 CUDA_VISIBLE_DEVICES=${GPU0} PYTHONWARNINGS=ignore python run_pg_mujoco.py \
     --alg ${ALGO} --env ${ENV} --dir_name ${DIR_NAME} --total_steps ${STEPS} --seed 0 > /dev/null &
 sleep 5
