@@ -94,7 +94,7 @@ def main():
     env_eval = gym.make(args.env)
     env_eval.seed(args.seed)
     obs_dim = env.observation_space.shape
-    act_dim = env.action_space.shape
+    ac_dim = env.action_space.shape
     max_action = float(env.action_space.high[0])
 
     # Experience buffer
@@ -119,15 +119,15 @@ def main():
         raise NotImplementedError
     elif args.alg == 'DDPG':
         import dpg.agents.ddpg as DDPG
-        agent = DDPG.DDPGAgent(sess, obs_dim, act_dim,
+        agent = DDPG.DDPGAgent(sess, obs_dim, ac_dim,
                                max_action, noise_scale=0.1)
     elif args.alg == 'TD3':
         import dpg.agents.td3 as TD3
-        agent = TD3.TD3Agent(sess, obs_dim, act_dim,
+        agent = TD3.TD3Agent(sess, obs_dim, ac_dim,
                              max_action, noise_scale=0.1)
     elif args.alg == 'SAC':
         import dpg.agents.sac as SAC
-        agent = SAC.SACAgent(sess, obs_dim, act_dim, max_action)
+        agent = SAC.SACAgent(sess, obs_dim, ac_dim, max_action)
     else:
         raise ValueError(f'Unknown agent: {args.alg}')
 
@@ -136,7 +136,6 @@ def main():
     agent.target_params_init()
 
     # Params
-    total_steps = int(1e6)
     start_steps = int(25e3)
     log_interval = 2048
     eval_freq = int(5e3)
@@ -164,7 +163,7 @@ def main():
         ep_ret += reward
         ep_len += 1
 
-        done = False if ep_len == max_ep_len else done
+        # done = False if ep_len == max_ep_len else done
         agent.buffer.store(obs, next_obs, ac, reward, done)
 
         obs = next_obs
