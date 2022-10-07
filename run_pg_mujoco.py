@@ -221,8 +221,7 @@ def main():
     raw_obs, _ = env.get_raw()
     # max_ep_ret = 0
     max_ep_len = env.spec.max_episode_steps
-    ep_ret_buf = collections.deque(maxlen=100)
-    ep_len_buf = collections.deque(maxlen=100)
+    epinfobuf = collections.deque(maxlen=100)
     ep_len = 0
     ep_ret = 0.
 
@@ -252,8 +251,7 @@ def main():
                 if terminal:
                     # obs = env.reset()
                     # raw_obs, _ = env.get_raw()
-                    ep_ret_buf.append(ep_ret)
-                    ep_len_buf.append(ep_len)
+                    epinfobuf.append({'r': ep_ret, 'l': ep_len})
                     ep_len = 0
                     ep_ret = 0.
 
@@ -262,8 +260,7 @@ def main():
         # env.update_rms(obs=rms_obs, ret=rms_ret)
 
         if update == 0:
-            ep_ret_buf.clear()
-            ep_len_buf.clear()
+            epinfobuf.clear()
             agent.buffer.reset()
             print('Initialized RMS for env.')
             continue
@@ -276,8 +273,8 @@ def main():
         agent.update(frac, logger)
 
         if update % log_interval == 0:
-            avg_ep_ret = np.mean(ep_ret_buf)
-            avg_ep_len = np.mean(ep_len_buf)
+            avg_ep_ret = np.mean([epinfo['r'] for epinfo in epinfobuf])
+            avg_ep_len = np.mean([epinfo['l'] for epinfo in epinfobuf])
 
             logger.logkv("train/nupdates", update)
             logger.logkv("train/timesteps", step)
