@@ -22,18 +22,24 @@ GPU0="${5:=0}"
 GPU1="${6:=1}"
 SECONDS=0
 
-echo "Running ${BOLD}${ALGO}${RESET} of rl-exercise in ${BOLD}${ENV}${RESET} for 4 experiments..."
+echo "Running ${BOLD}${ALGO}${RESET} of rl-exercise in ${BOLD}${ENV}${RESET} for 6 experiments..."
 CUDA_VISIBLE_DEVICES=${GPU0} PYTHONWARNINGS=ignore python run_dpg_mujoco.py \
     --alg ${ALGO} --env ${ENV} --dir_name ${DIR_NAME} --total_steps ${STEPS} --seed 0 > /dev/null &
 sleep 5
 CUDA_VISIBLE_DEVICES=${GPU0} PYTHONWARNINGS=ignore python run_dpg_mujoco.py \
     --alg ${ALGO} --env ${ENV} --dir_name ${DIR_NAME} --total_steps ${STEPS} --seed 1 > /dev/null &
 sleep 5
-CUDA_VISIBLE_DEVICES=${GPU1} PYTHONWARNINGS=ignore python run_dpg_mujoco.py \
+CUDA_VISIBLE_DEVICES=${GPU0} PYTHONWARNINGS=ignore python run_dpg_mujoco.py \
     --alg ${ALGO} --env ${ENV} --dir_name ${DIR_NAME} --total_steps ${STEPS} --seed 2 > /dev/null &
 sleep 5
 CUDA_VISIBLE_DEVICES=${GPU1} PYTHONWARNINGS=ignore python run_dpg_mujoco.py \
     --alg ${ALGO} --env ${ENV} --dir_name ${DIR_NAME} --total_steps ${STEPS} --seed 3 > /dev/null &
+sleep 5
+CUDA_VISIBLE_DEVICES=${GPU1} PYTHONWARNINGS=ignore python run_dpg_mujoco.py \
+    --alg ${ALGO} --env ${ENV} --dir_name ${DIR_NAME} --total_steps ${STEPS} --seed 4 > /dev/null &
+sleep 5
+CUDA_VISIBLE_DEVICES=${GPU1} PYTHONWARNINGS=ignore python run_dpg_mujoco.py \
+    --alg ${ALGO} --env ${ENV} --dir_name ${DIR_NAME} --total_steps ${STEPS} --seed 5 > /dev/null &
 wait
 
 duration=${SECONDS}

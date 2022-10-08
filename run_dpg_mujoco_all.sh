@@ -19,8 +19,8 @@ STEPS=$3
 GPU0="${4:=0}"
 # default: 1
 GPU1="${5:=1}"
-ENV=('Ant-v2' 'BipedalWalkerHardcore-v3' 'HalfCheetah-v2' 'Hopper-v2'
-     'InvertedDoublePendulum-v2' 'InvertedPendulum-v2')
+ENV=('Ant-v2' 'BipedalWalkerHardcore-v3' 'HalfCheetah-v2' 'Hopper-v2' 'Humanoid-v2' 'HumanoidStandup-v2'
+     'InvertedDoublePendulum-v2' 'InvertedPendulum-v2' 'Swimmer-v2' 'Walker2d-v2')
 LEN=${#ENV[*]}
 SECONDS=0
 
@@ -29,18 +29,24 @@ echo "=================================================="
 
 for i in $(seq 1 ${LEN})
 do
-    echo "${CYAN}${BOLD}Running ${ENV[i]} (${i}/${LEN}) for 4 experiments...${RESET}"
+    echo "${CYAN}${BOLD}Running ${ENV[i]} (${i}/${LEN}) for 6 experiments...${RESET}"
     CUDA_VISIBLE_DEVICES=${GPU0} PYTHONWARNINGS=ignore python run_dpg_mujoco.py \
         --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} --total_steps ${STEPS} --seed 0 > /dev/null &
     sleep 5
     CUDA_VISIBLE_DEVICES=${GPU0} PYTHONWARNINGS=ignore python run_dpg_mujoco.py \
         --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} --total_steps ${STEPS} --seed 1 > /dev/null &
     sleep 5
-    CUDA_VISIBLE_DEVICES=${GPU1} PYTHONWARNINGS=ignore python run_dpg_mujoco.py \
+    CUDA_VISIBLE_DEVICES=${GPU0} PYTHONWARNINGS=ignore python run_dpg_mujoco.py \
         --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} --total_steps ${STEPS} --seed 2 > /dev/null &
     sleep 5
     CUDA_VISIBLE_DEVICES=${GPU1} PYTHONWARNINGS=ignore python run_dpg_mujoco.py \
         --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} --total_steps ${STEPS} --seed 3 > /dev/null &
+    sleep 5
+    CUDA_VISIBLE_DEVICES=${GPU1} PYTHONWARNINGS=ignore python run_dpg_mujoco.py \
+        --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} --total_steps ${STEPS} --seed 4 > /dev/null &
+    sleep 5
+    CUDA_VISIBLE_DEVICES=${GPU1} PYTHONWARNINGS=ignore python run_dpg_mujoco.py \
+        --alg ${ALGO} --env ${ENV[i]} --dir_name ${DIR_NAME} --total_steps ${STEPS} --seed 5 > /dev/null &
     # Waiting for all subprocess finished.
     wait
     sleep 10
