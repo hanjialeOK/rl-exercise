@@ -31,16 +31,22 @@ class Logger(object):
 
     def dumpkvs(self, timestep):
         # Write data to file1
-        newkeys = list(self.name2val.keys())
-        if len(self.keys) == 0:
+        newkeys = list(self.name2val.keys() - self.keys)
+        if newkeys:
             self.keys.extend(newkeys)
+            self.file1.seek(0)
+            lines = self.file1.readlines()
             self.file1.seek(0)
             for (i, k) in enumerate(self.keys):
                 if i > 0:
                     self.file1.write(',')
                 self.file1.write(k)
             self.file1.write('\n')
-        assert len(self.keys) == len(newkeys)
+            for line in lines[1:]:
+                self.file1.write(line[:-1])
+                self.file1.write(',' * len(newkeys))
+                self.file1.write('\n')
+        # assert len(self.keys) == len(newkeys)
         for (i, k) in enumerate(self.keys):
             if i > 0:
                 self.file1.write(',')
