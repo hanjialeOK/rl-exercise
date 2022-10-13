@@ -174,10 +174,10 @@ class DDPGAgent():
 
         losses = self.sess.run(
             self.stats_list + [self.train_actor_op, self.train_critic_op], feed_dict=inputs)[:-2]
-        # for (lossval, lossname) in zip(losses, self.loss_names):
-        #     logger.logkv('loss/' + lossname, lossval)
-        # logger.logkv("loss/actor_lr", self.actor_lr)
-        # logger.logkv("loss/critic_lr", self.critic_lr)
+        for (lossval, lossname) in zip(losses, self.loss_names):
+            logger.logkv('loss/' + lossname, lossval)
+        logger.logkv("loss/actor_lr", self.actor_lr)
+        logger.logkv("loss/critic_lr", self.critic_lr)
         self.sess.run(self.target_update)
 
     def bundle(self, checkpoint_dir, iteration):

@@ -173,13 +173,9 @@ class TD3Agent():
         meanq1 = tf.reduce_mean(q1_value, axis=-1)
         meanq2 = tf.reduce_mean(q2_value, axis=-1)
 
-        self.stats_list = [actor_loss]
-        self.loss_names = ['actor_loss']
+        self.stats_list = [actor_loss, critic_loss, meanq1, meanq2]
+        self.loss_names = ['actor_loss', 'critic_loss', 'q1_value', 'q2_value']
         assert len(self.stats_list) == len(self.loss_names)
-
-        self.stats_list2 = [critic_loss, meanq1, meanq2]
-        self.loss_names2 = ['critic_loss', 'q1_value', 'q2_value']
-        assert len(self.stats_list2) == len(self.loss_names2)
 
     def select_action(self, obs, noise=True):
         pi = self.sess.run(
@@ -210,17 +206,15 @@ class TD3Agent():
 
         # Trick 3
         losses = self.sess.run(self.stats_list + [self.train_critic_op], feed_dict=inputs)[:-1]
-        # for (lossval, lossname) in zip(losses, self.loss_names):
-        #     logger.logkv('loss/' + lossname, lossval)
+        for (lossval, lossname) in zip(losses, self.loss_names):
+            logger.logkv('loss/' + lossname, lossval)
 
         if self.train_step % self.delayed_freq == 0:
-            losses2 = self.sess.run(self.stats_list2 + [self.train_actor_op], feed_dict=inputs)[:-1]
-            # for (lossval, lossname) in zip(losses2, self.loss_names2):
-            #     logger.logkv('loss/' + lossname, lossval)
+            self.sess.run([self.train_actor_op], feed_dict=inputs)
             self.sess.run(self.target_update)
 
-        # logger.logkv("loss/actor_lr", self.actor_lr)
-        # logger.logkv("loss/critic_lr", self.critic_lr)
+        logger.logkv("loss/actor_lr", self.actor_lr)
+        logger.logkv("loss/critic_lr", self.critic_lr)
 
     def bundle(self, checkpoint_dir, iteration):
         if not os.path.exists(checkpoint_dir):
