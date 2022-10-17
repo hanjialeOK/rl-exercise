@@ -49,11 +49,11 @@ class ActorCriticCNN(tf.keras.Model):
 
 class PPOAgent(BaseAgent):
     def __init__(self, sess, env, nenv=8,
-                 clip_ratio=0.2, lr=2.5e-4, train_iters=4, target_kl=1e-3,
-                 ent_coef=0.01, vf_coef=0.5, max_grad_norm=0.5,
+                 clip_ratio=0.1, lr=2.5e-4, train_iters=4, target_kl=1e-3,
+                 ent_coef=0.01, vf_coef=0.5, max_grad_norm=1.0,
                  horizon=128, nminibatches=4, gamma=0.99, lam=0.95,
-                 grad_clip=False, vf_clip=True, fixed_lr=False, beta=1,
-                 thresh=0.2, alpha=0.03, nlatest=32, uniform=True,
+                 grad_clip=True, vf_clip=True, fixed_lr=False, beta=1,
+                 thresh=0.1, alpha=0.03, nlatest=16, uniform=True,
                  geppo=True, clip_ratio2=0.4):
         self.sess = sess
         self.obs_shape = (84, 84, 4)
@@ -175,6 +175,8 @@ class PPOAgent(BaseAgent):
         # Info (useful to watch during learning)
         approxkl = 0.5 * tf.reduce_mean(tf.square(neglogp_pik_ph - neglogpac))
         absratio = tf.reduce_mean(tf.abs(ratio - 1.0) + 1.0)
+        maxratio = tf.reduce_max(ratio)
+        minratio = tf.reduce_min(ratio)
         ratioclipped1 = tf.where(
             adv_ph > 0,
             ratio > center + self.clip_ratio,
@@ -209,9 +211,9 @@ class PPOAgent(BaseAgent):
         self.v = v
         self.train_op = train_op
 
-        self.stats_list = [pi_loss_ctl, pi_loss, vf_loss, meanent, meankl, approxkl,
+        self.stats_list = [pi_loss_ctl, pi_loss, vf_loss, meanent, meankl, approxkl, maxratio, minratio,
                            absratio, ratioclipfrac1, ratioclipfrac2, ratioclipfrac, gradclipped, tv_on, tv]
-        self.loss_names = ['pi_loss_ctl', 'pi_loss', 'vf_loss', 'entropy', 'kl', 'approxkl',
+        self.loss_names = ['pi_loss_ctl', 'pi_loss', 'vf_loss', 'entropy', 'kl', 'approxkl', 'maxratio', 'minratio',
                            'absratio', 'ratioclipfrac1', 'ratioclipfrac2', 'ratioclipfrac', 'gradclipped', 'tv_on', 'tv']
         assert len(self.stats_list) == len(self.loss_names)
 
@@ -235,7 +237,7 @@ class PPOAgent(BaseAgent):
 
         filter_inds = np.array([], dtype=np.int64)
         thresh = self.thresh
-        # thresh = np.maximum(self.thresh * frac, 0.2)
+        # thresh = np.maximum(self.thresh * frac, 0.5)
         # Filter old trajs
         for s in range(n_oldtrajs):
             start = s*self.nbatch
@@ -261,8 +263,8 @@ class PPOAgent(BaseAgent):
         on_policy = np.zeros(obs_filted.shape[0])
         on_policy[-self.nbatch:] = n_trajs_active
 
-        lr = self.lr if self.fixed_lr else self.lr * frac
-        # lr = self.lr if self.fixed_lr else np.maximum(self.lr * frac, 1e-4)
+        # lr = self.lr if self.fixed_lr else self.lr * frac
+        lr = self.lr if self.fixed_lr else np.maximum(self.lr * frac, 0.3e-4)
         # lr = self.lr
         # self.thresh = np.maximum(self.thresh * frac, 0.1)
 
