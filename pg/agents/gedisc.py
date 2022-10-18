@@ -192,6 +192,8 @@ class PPOAgent(BaseAgent):
         # Info (useful to watch during learning)
         approxkl = 0.5 * tf.reduce_mean(tf.square(neglogp_pik_ph - neglogpac))
         absratio = tf.reduce_mean(tf.abs(ratio - 1.0) + 1.0)
+        max_ratio = tf.reduce_max(ratio)
+        min_ratio = tf.reduce_min(ratio)
         ratioclipped1 = tf.where(
             adv_ph > 0,
             ratio > center + self.clip_ratio,
@@ -226,9 +228,9 @@ class PPOAgent(BaseAgent):
         self.v = v
         self.train_op = train_op
 
-        self.stats_list = [pi_loss_ctl, pi_loss, vf_loss, meanent, meankl, approxkl,
+        self.stats_list = [pi_loss_ctl, pi_loss, vf_loss, meanent, meankl, approxkl, max_ratio, min_ratio,
                            absratio, ratioclipfrac1, ratioclipfrac2, ratioclipfrac, gradclipped, tv_on, tv]
-        self.loss_names = ['pi_loss_ctl', 'pi_loss', 'vf_loss', 'entropy', 'kl', 'approxkl',
+        self.loss_names = ['pi_loss_ctl', 'pi_loss', 'vf_loss', 'entropy', 'kl', 'approxkl', 'max_ratio', 'min_ratio',
                            'absratio', 'ratioclipfrac1', 'ratioclipfrac2', 'ratioclipfrac', 'gradclipped', 'tv_on', 'tv']
         assert len(self.stats_list) == len(self.loss_names)
 
