@@ -20,35 +20,24 @@ from termcolor import cprint, colored
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 
-def evaluate(env_eval, agent, n_eval_episodes=10):
-    ret_sum = 0.
-    len_sum = 0
+def evaluate(env, agent, n_episodes=5):
+    eval_epinfobuf = []
 
-    for i in range(1, n_eval_episodes + 1):
-        obs = env_eval.reset()
+    for i in range(1, n_episodes + 1):
+        obs = env.reset()
         ep_ret = 0.
         ep_len = 0
         while True:
-            ac = agent.select_action(obs, deterministic=False)
-            obs, reward, done, _ = env_eval.step(ac)
-            # if isinstance(obs, np.ndarray):
-            #     obs = obs[0]
-            #     reward = reward[0]
-            #     done = done[0]
-            ep_ret += reward
+            ac, _, _, _, _ = agent.select_action(obs, deterministic=True)
+            obs, reward, done, _ = env.step(ac)
+            _, raw_rew = env.get_raw()
+            ep_ret += raw_rew
             ep_len += 1
             if done:
-                cprint(f'\rEvaluate: {i}/{n_eval_episodes}',
-                       color='cyan', attrs=['bold'], end='')
-                ret_sum += ep_ret
-                len_sum += ep_len
+                eval_epinfobuf.append({'r': ep_ret, 'l': ep_len})
                 break
-    avg_eval_ret = ret_sum / n_eval_episodes
-    avg_eval_len = len_sum / n_eval_episodes
-    cprint(f'\navg_eval_len: {ep_len}, avg_eval_ret: {ep_ret:.1f}',
-           color='cyan', attrs=['bold'])
 
-    return avg_eval_ret, avg_eval_len
+    return eval_epinfobuf
 
 
 def main():
@@ -120,6 +109,10 @@ def main():
     # Openai baselines
     env = make_vec_env(args.env, 'mujoco', num_env=1, seed=args.seed)
     env = VecNormalize(env)
+    env_eval = make_vec_env(args.env, 'mujoco', num_env=1, seed=args.seed)
+    env_eval = VecNormalize(env_eval, eval=True)
+    env_eval.ob_rms = env.ob_rms
+    env_eval.ret_rms = env.ret_rms
 
     gpu_options = tf.compat.v1.GPUOptions(allow_growth=True)
     sess = tf.compat.v1.Session(
@@ -192,7 +185,7 @@ def main():
         raise ValueError('Unknown agent: {}'.format(args.alg))
 
     # 1M // 2048 / 488 = 1
-    log_interval = total_steps // agent.horizon // 488
+    log_interval = 4096 // agent.horizon
 
     # Actually, we won't use save_weights because it does not contain logstd.
     tf.compat.v1.keras.backend.set_session(sess)
@@ -288,19 +281,17 @@ def main():
             logger.loginfo('horizon', horizon)
             logger.loginfo('progress', f'{update/nupdates:.1%}')
 
-            logger.dumpkvs(timestep=step)
-
-        # Evaluate
-        if update % 100 == 0 and args.allow_eval:
-            raise NotImplementedError
-            avg_ret, evg_len = evaluate(env_eval, agent)
-            logger.logkv('eval/avg_len', evg_len)
-            logger.logkv('eval/avg_reward', avg_ret)
+            # Evaluate
+            eval_epinfobuf = evaluate(env_eval, agent)
+            logger.logkv('eval/avgeplen', np.mean([epinfo['l'] for epinfo in eval_epinfobuf]))
+            logger.logkv('eval/avgepret', np.mean([epinfo['r'] for epinfo in eval_epinfobuf]))
             # Save the best weights
-            if avg_ret >= max_ep_ret and args.save_model:
-                print(f'Saving weights into {checkpoint_dir}')
-                agent.bundle(checkpoint_dir, update)
-                max_ep_ret = avg_ret
+            # if avg_ret >= max_ep_ret and args.save_model:
+            #     print(f'Saving weights into {checkpoint_dir}')
+            #     agent.bundle(checkpoint_dir, update)
+            #     max_ep_ret = avg_ret
+
+            logger.dumpkvs(timestep=step)
 
     time_delta = int(time.time() - start_time)
     m, s = divmod(time_delta, 60)

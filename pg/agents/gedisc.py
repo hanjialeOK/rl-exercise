@@ -365,7 +365,7 @@ class PPOAgent(BaseAgent):
         [mu, logstd, pi, v, neglogp] = self.sess.run(
             self.get_action_ops, feed_dict={self.ob1_ph: obs.reshape(1, -1)})
         ac = mu if deterministic else pi
-        return pi, v, neglogp, mu, logstd
+        return ac, v, neglogp, mu, logstd
 
     def compute_v(self, obs):
         v = self.sess.run(
