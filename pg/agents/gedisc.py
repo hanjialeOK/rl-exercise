@@ -63,7 +63,7 @@ class PPOAgent(BaseAgent):
                  horizon=2048, nminibatches=32, gamma=0.99, lam=0.95,
                  grad_clip=False, vf_clip=True, fixed_lr=False, beta=1,
                  thresh=0.4, alpha=0.03, nlatest=64, uniform=True,
-                 geppo=True, clip_ratio2=0.8):
+                 geppo=True, clip_ratio2=0.8, Jkl=False):
         self.sess = sess
         self.obs_shape = env.observation_space.shape
         self.ac_shape = env.action_space.shape
@@ -85,6 +85,7 @@ class PPOAgent(BaseAgent):
         self.beta = beta
         self.geppo = geppo
         self.clip_ratio2 = clip_ratio2
+        self.Jkl = Jkl
 
         self.buffer = Buffer.GAEVBuffer(
             env, horizon=horizon, nlatest=nlatest, gamma=gamma, lam=lam,
@@ -181,8 +182,10 @@ class PPOAgent(BaseAgent):
         pi_loss2 = -adv_ph * ratio_clip
         pi_loss = tf.reduce_mean(weights_ph * tf.maximum(pi_loss1, pi_loss2))
 
-        # pi_loss_ctl = 0.5 * tf.reduce_mean(kl*on_policy_ph)
-        pi_loss_ctl = 0.5 * tf.reduce_mean(tf.square(neglogp_old_ph - neglogpac)*on_policy_ph)
+        if self.Jkl:
+            pi_loss_ctl = tf.reduce_mean(kl*on_policy_ph)
+        else:
+            pi_loss_ctl = 0.5 * tf.reduce_mean(tf.square(neglogp_old_ph - neglogpac)*on_policy_ph)
         # pi_loss_ctl = 0.5 * tf.reduce_mean((ratio - 1.0 - tf.log(ratio))*on_policy_ph)
         pi_loss += beta_ph * pi_loss_ctl
 
@@ -359,6 +362,7 @@ class PPOAgent(BaseAgent):
         logger.logkv("loss/clip1", self.clip_ratio)
         logger.logkv("loss/clip2", self.clip_ratio2)
         logger.logkv("loss/target_kl", self.target_kl)
+        logger.logkv("loss/Jkl", self.Jkl)
 
         self.buffer.update()
 
