@@ -1,7 +1,6 @@
 import numpy as np
 import tensorflow as tf
-import tensorflow_probability as tfp
-import os
+from common.distributions import DiagGaussianPd
 
 from pg.agents.base import BaseAgent
 import pg.buffer.gaebuffer as Buffer
@@ -125,13 +124,13 @@ class CriticMLP(tf.keras.Model):
 
 
 class TRPOAgent(BaseAgent):
-    def __init__(self, sess, obs_dim, act_dim,
+    def __init__(self, sess, env, 
                  max_kl=0.01, vf_lr=1e-3, train_vf_iters=5, ent_coef=0.0,
                  cg_damping=0.1, cg_iters=10, horizon=1024, minibatch=64,
                  gamma=0.99, lam=0.98):
         self.sess = sess
-        self.obs_dim = obs_dim
-        self.act_dim = act_dim
+        self.obs_dim = env.observation_space.shape
+        self.ac_dim = env.action_space.shape
         self.max_kl = max_kl
         self.vf_lr = vf_lr
         self.train_vf_iters = train_vf_iters
@@ -142,67 +141,68 @@ class TRPOAgent(BaseAgent):
         self.minibatch = minibatch
 
         self.buffer = Buffer.GAEBuffer(
-            obs_dim, act_dim, size=horizon, gamma=gamma, lam=lam)
+            env, horizon=horizon, gamma=gamma, lam=lam,
+            compute_v=self.compute_v)
         self._build_network()
         self._build_train_op()
-        self.saver = self._build_saver()
         self.sync_ops = self._build_sync_op()
+        super().__init__()
 
     def _build_network(self):
-        self.actor = ActorMLP(self.act_dim, name='pi')
+        self.actor = ActorMLP(self.ac_dim, name='pi')
         self.critic = CriticMLP(name='vf')
-        self.actor_old = ActorMLP(self.act_dim, name='pi_old')
+        self.actor_old = ActorMLP(self.ac_dim, name='pi_old')
 
     def _build_train_op(self):
         self.ob1_ph = ob1_ph = tf.compat.v1.placeholder(
             shape=(1, ) + self.obs_dim, dtype=tf.float32, name="ob1_ph")
         self.obs_ph = obs_ph = tf.compat.v1.placeholder(
             shape=(None, ) + self.obs_dim, dtype=tf.float32, name="obs_ph")
-        self.act_ph = act_ph = tf.compat.v1.placeholder(
-            shape=(None, ) + self.act_dim, dtype=tf.float32, name="act_ph")
+        self.ac_ph = ac_ph = tf.compat.v1.placeholder(
+            shape=(None, ) + self.ac_dim, dtype=tf.float32, name="ac_ph")
         self.adv_ph = adv_ph = tf.compat.v1.placeholder(
             shape=[None, ], dtype=tf.float32, name="adv_ph")
         self.ret_ph = ret_ph = tf.compat.v1.placeholder(
             shape=[None, ], dtype=tf.float32, name="ret_ph")
-        self.logp_old_ph = logp_old_ph = tf.compat.v1.placeholder(
-            shape=[None, ], dtype=tf.float32, name="logp_old_ph")
+        self.neglogp_old_ph = neglogp_old_ph = tf.compat.v1.placeholder(
+            shape=[None, ], dtype=tf.float32, name="neglogp_old_ph")
         self.val_ph = val_ph = tf.compat.v1.placeholder(
             shape=[None, ], dtype=tf.float32, name="val_ph")
 
         # Probability distribution
-        logstd = tf.compat.v1.get_variable(
-            name='pi/logstd', shape=(1, self.act_dim[0]),
+        logstd1 = tf.compat.v1.get_variable(
+            name='pi/logstd1', shape=(1, self.ac_dim[0]),
             initializer=tf.zeros_initializer)
-        logstd_old = tf.compat.v1.get_variable(
-            name='pi_old/logstd', shape=(1, self.act_dim[0]),
+        logstd1_old = tf.compat.v1.get_variable(
+            name='pi_old/logstd1', shape=(1, self.ac_dim[0]),
             initializer=tf.zeros_initializer)
-        std = tf.exp(logstd)
-        std_old = tf.stop_gradient(tf.exp(logstd_old))
 
         # Interative with env
         mu1 = self.actor(ob1_ph)
-        dist1 = tfp.distributions.Normal(loc=mu1, scale=std)
+        dist1 = DiagGaussianPd(mu1, logstd1)
         pi1 = dist1.sample()
-        logp_pi1 = tf.reduce_sum(dist1.log_prob(pi1), axis=1)
+        neglogp1 = tf.reduce_sum(dist1.neglogp(pi1), axis=1)
         v1 = self.critic(ob1_ph)
-        get_action_ops = [mu1, pi1, v1, logp_pi1]
+        get_action_ops = [mu1, logstd1, pi1, v1, neglogp1]
 
         # Train batch data
         mu = self.actor(obs_ph)
-        dist = tfp.distributions.Normal(loc=mu, scale=std)
-        logp_a = tf.reduce_sum(dist.log_prob(act_ph), axis=1)
+        logstd = tf.tile(logstd1, (tf.shape(mu)[0], 1))
+        dist = DiagGaussianPd(mu, logstd)
+        neglogpac = tf.reduce_sum(dist.neglogp(ac_ph), axis=1)
         entropy = tf.reduce_sum(dist.entropy(), axis=1)
         meanent = tf.reduce_mean(entropy)
 
         mu_old = tf.stop_gradient(self.actor_old(obs_ph))
-        dist_old = tfp.distributions.Normal(loc=mu_old, scale=std_old)
-        kl = tf.reduce_sum(dist.kl_divergence(dist_old), axis=1)
+        logstd_old = tf.tile(logstd1_old, (tf.shape(mu_old)[0], 1))
+        dist_old = DiagGaussianPd(mu_old, logstd_old)
+        kl = tf.reduce_sum(dist_old.kl(dist), axis=1)
         meankl = tf.reduce_mean(kl)
 
         v = self.critic(obs_ph)
 
         # TRPO objectives
-        ratio = tf.exp(logp_a - logp_old_ph)
+        ratio = tf.exp(neglogp_old_ph - neglogpac)
         surrgain = tf.reduce_mean(ratio * adv_ph)
         vf_loss = 0.5 * tf.reduce_mean(tf.square(v - ret_ph))
         optimgain = surrgain + self.ent_coef * meanent
@@ -235,17 +235,19 @@ class TRPOAgent(BaseAgent):
         self.newv_ph = newv_ph
         self.get_action_ops = get_action_ops
         self.v1 = v1
-        self.surrgain = surrgain
-        self.vf_loss = vf_loss
         self.optimgain = optimgain
-        self.kl = meankl
-        self.entropy = meanent
+        self.vf_loss = vf_loss
         self.vf_train_op = vf_train_op
         self.surr_grads_flatted = surr_grads_flatted
         # self.is_gradclipped = is_gradclipped
         self.pi_params_flatted = pi_params_flatted
         self.fvp = fvp
         self.set_pi_params = set_pi_params
+
+        self.pi_losses = [optimgain, meankl, surrgain, meanent]
+        self.pi_loss_names = ['optimgain', 'kl', 'surrgain', 'entropy']
+        self.vf_losses = [vf_loss]
+        self.vf_loss_names = ['vf_loss']
 
     def _build_sync_op(self):
         sync_qt_ops = []
@@ -256,25 +258,20 @@ class TRPOAgent(BaseAgent):
             sync_qt_ops.append(oldv.assign(newv, use_locking=True))
         return sync_qt_ops
 
-    def update(self, frac=None):
+    def update(self, frac, logger):
         buf_data = self.buffer.get()
         assert buf_data[0].shape[0] == self.horizon
-        [obs, actions, advs, rets, logprobs, values] = buf_data
-        advs = (advs - np.mean(advs)) / (np.std(advs) + 1e-8)
-
-        surrgain_buf = []
-        vf_loss_buf = []
-        entropy_buf = []
-        kl_buf = []
+        [obs_all, ac_all, adv_all, ret_all, val_all, neglogp_all] = buf_data
+        advs = (adv_all - np.mean(adv_all)) / (np.std(adv_all) + 1e-8)
 
         inputs = {
-            self.obs_ph: obs,
-            self.act_ph: actions,
+            self.obs_ph: obs_all,
+            self.ac_ph: ac_all,
             self.adv_ph: advs,
-            self.logp_old_ph: logprobs
+            self.neglogp_old_ph: neglogp_all
         }
         fvp_inputs = {
-            self.obs_ph: obs[::5]
+            self.obs_ph: obs_all[::5]
         }
 
         def fisher_vector_product(x):
@@ -286,6 +283,9 @@ class TRPOAgent(BaseAgent):
             self.surr_grads_flatted, feed_dict=inputs)
         if np.allclose(g, 0):
             print("Got zero gradient. not updating")
+            for lossname in self.pi_loss_names:
+                logger.logkv('loss/' + lossname, np.nan)
+            logger.logkv('loss/linesearch', 0)
         else:
             stepdir = cg(fisher_vector_product, g, self.cg_iters)
             assert np.isfinite(stepdir).all()
@@ -296,15 +296,14 @@ class TRPOAgent(BaseAgent):
             oldv = self.sess.run(self.pi_params_flatted)
             surrbefore = self.sess.run(self.optimgain, feed_dict=inputs)
             stepsize = 1.0
+            mblossvals = []
             for i in range(10):
                 newv = oldv + fullstep * stepsize
                 self.sess.run(self.set_pi_params,
                               feed_dict={self.newv_ph: newv})
-                surr, kl, entropy = self.sess.run(
-                    [self.optimgain, self.kl, self.entropy], feed_dict=inputs)
-                surrgain_buf.append(surr)
-                kl_buf.append(kl)
-                entropy_buf.append(entropy)
+                lossvals = self.sess.run(self.pi_losses, feed_dict=inputs)
+                mblossvals.append(lossvals)
+                surr, kl = lossvals[0], lossvals[1]
                 improve = surr - surrbefore
                 print("Expected: %.3f Actual: %.3f" %
                       (expectedimprove, improve))
@@ -327,7 +326,13 @@ class TRPOAgent(BaseAgent):
                 self.sess.run(self.set_pi_params,
                               feed_dict={self.newv_ph: oldv})
 
+            lossvals = np.mean(mblossvals, axis=0)
+            for (lossval, lossname) in zip(lossvals, self.pi_loss_names):
+                logger.logkv('loss/' + lossname, lossval)
+            logger.logkv('loss/linesearch', len(mblossvals))
+
         indices = np.arange(self.horizon)
+        mblossvals = []
         for _ in range(self.train_vf_iters):
             # Randomize the indexes
             np.random.shuffle(indices)
@@ -336,31 +341,24 @@ class TRPOAgent(BaseAgent):
                 end = start + self.minibatch
                 mbinds = indices[start:end]
                 batch_inputs = {
-                    self.obs_ph: obs[mbinds],
-                    self.ret_ph: rets[mbinds]
+                    self.obs_ph: obs_all[mbinds],
+                    self.ret_ph: ret_all[mbinds]
                 }
-                vf_loss, _ = self.sess.run(
-                    [self.vf_loss, self.vf_train_op],
-                    feed_dict=batch_inputs)
-                vf_loss_buf.append(vf_loss)
+                vf_loss = self.sess.run(self.vf_losses + [self.vf_train_op], feed_dict=batch_inputs)[:-1]
+                mblossvals.append(vf_loss)
 
-        return [np.mean(surrgain_buf), np.mean(vf_loss_buf),
-                np.mean(entropy_buf), np.mean(kl_buf),
-                0, self.vf_lr]
+        lossvals = np.mean(mblossvals, axis=0)
+        for (lossval, lossname) in zip(lossvals, self.vf_loss_names):
+            logger.logkv('loss/' + lossname, lossval)
+        logger.logkv("loss/lr", self.vf_lr)
 
     def select_action(self, obs, deterministic=False):
-        [mu, pi, v, logp_pi] = self.sess.run(
+        [mu, logstd, pi, v, neglogp] = self.sess.run(
             self.get_action_ops, feed_dict={self.ob1_ph: obs.reshape(1, -1)})
-        self.extra_info = [v, logp_pi]
         ac = mu if deterministic else pi
-        return pi[0]
+        return ac, v, neglogp, mu, logstd
 
     def compute_v(self, obs):
         v = self.sess.run(
             self.v1, feed_dict={self.ob1_ph: obs.reshape(1, -1)})
-        return v[0]
-
-    def store_transition(self, obs, action, reward, done):
-        [v, logp_pi] = self.extra_info
-        self.buffer.store(obs, action, reward, done,
-                          v[0], logp_pi[0])
+        return v
