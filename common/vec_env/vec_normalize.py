@@ -8,11 +8,12 @@ class VecNormalize(VecEnvWrapper):
     and returns from an environment.
     """
 
-    def __init__(self, venv, ob=True, ret=True, clipob=10., cliprew=10., gamma=0.99, epsilon=1e-8):
+    def __init__(self, venv, ob=True, ret=True, eval=False, clipob=10., cliprew=10., gamma=0.99, epsilon=1e-8):
         VecEnvWrapper.__init__(self, venv)
         from common.running_mean_std import RunningMeanStd
         self.ob_rms = RunningMeanStd(shape=self.observation_space.shape) if ob else None
         self.ret_rms = RunningMeanStd(shape=()) if ret else None
+        self.eval = eval
         self.clipob = clipob
         self.cliprew = cliprew
         self.ret = np.zeros(self.num_envs)
@@ -25,10 +26,12 @@ class VecNormalize(VecEnvWrapper):
         self.raw_rews = rews.copy()
         self.ret = self.ret * self.gamma + rews
         if self.ob_rms:
-            self.ob_rms.update(obs)
+            if not self.eval:
+                self.ob_rms.update(obs)
             obs = self._obfilt(obs)
         if self.ret_rms:
-            self.ret_rms.update(self.ret)
+            if not self.eval:
+                self.ret_rms.update(self.ret)
             rews = self._rewfilt(rews)
         self.ret[news] = 0.
         return obs, rews, news, infos
